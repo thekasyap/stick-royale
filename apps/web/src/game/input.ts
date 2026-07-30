@@ -21,8 +21,9 @@ export class Input {
     });
     canvas.addEventListener("mousemove", (e) => {
       const rect = canvas.getBoundingClientRect();
-      this.mouseX = ((e.clientX - rect.left) / rect.width) * canvas.width;
-      this.mouseY = ((e.clientY - rect.top) / rect.height) * canvas.height;
+      // CSS pixel coords — matches viewport size used by the game loop
+      this.mouseX = ((e.clientX - rect.left) / rect.width) * rect.width;
+      this.mouseY = ((e.clientY - rect.top) / rect.height) * rect.height;
     });
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 0) this.mouseDown = true;

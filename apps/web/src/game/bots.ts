@@ -28,15 +28,15 @@ type BotProfile = {
 
 const PROFILES: Record<BotDifficulty, BotProfile> = {
   easy: {
-    aimError: 0.35,
-    turnRate: 2.8,
-    reaction: 0.55,
-    accuracy: 0.35,
-    lootGreed: 0.9,
-    healHp: 55,
-    engageRange: 280,
-    fleeHp: 25,
-    dropDelay: 2.5,
+    aimError: 0.42,
+    turnRate: 2.4,
+    reaction: 0.7,
+    accuracy: 0.28,
+    lootGreed: 0.95,
+    healHp: 50,
+    engageRange: 240,
+    fleeHp: 30,
+    dropDelay: 4.5,
   },
   normal: {
     aimError: 0.18,
@@ -174,13 +174,20 @@ function findThreat(
 ): Fighter | null {
   let best: Fighter | null = null;
   let bestD = range;
+  const range2 = range * range;
   for (const f of fighters) {
     if (f.id === bot.id || f.state !== "alive") continue;
-    // bots fight everyone including player; skip same bot "team" only if we want friendlies — all free-for-all
-    const d = dist(bot, f);
-    if (d < bestD && hasLos(bot, f, map.buildings, map.cover)) {
-      bestD = d;
-      best = f;
+    const dx = bot.x - f.x;
+    const dy = bot.y - f.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > range2) continue;
+    const d = Math.sqrt(d2);
+    // cheap LOS: skip full building scan past mid range
+    if (d < 160 || hasLos(bot, f, map.buildings, map.cover)) {
+      if (d < bestD) {
+        bestD = d;
+        best = f;
+      }
     }
   }
   return best;

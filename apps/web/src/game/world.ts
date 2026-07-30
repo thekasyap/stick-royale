@@ -38,6 +38,8 @@ import { tickReload } from "./combat";
 
 export type KillFeedEntry = { killer: string; victim: string; weapon: string; t: number };
 
+export type HitMarker = { x: number; y: number; text: string; life: number; crit: boolean };
+
 export type MatchConfig = {
   nickname: string;
   mode: GameMode;
@@ -63,6 +65,7 @@ export class World {
   frags: FragNade[] = [];
   smokes: SmokeCloud[] = [];
   killFeed: KillFeedEntry[] = [];
+  hitMarkers: HitMarker[] = [];
   time = 0;
   seed: number;
   rng: () => number;
@@ -150,17 +153,23 @@ export class World {
 
     this.updatePlayer(dt, input, viewW, viewH);
 
-    for (const f of this.fighters) {
+    const botStride = 2; // update half the bots fully each frame for perf
+    const frame = Math.floor(this.time * 60);
+    for (let i = 0; i < this.fighters.length; i++) {
+      const f = this.fighters[i]!;
       if (f.isBot) {
-        // sync plane riders
         if (f.state === "plane") {
           f.x = this.plane.x;
           f.y = this.plane.y;
         }
-        updateBot(
-          f, this.fighters, this.map, this.zone, dt, this.time,
-          this.bullets, this.melees, this.frags, this.smokes, this.rng,
-        );
+        const nearPlayer = dist(f, this.player) < 520;
+        if (nearPlayer || (i + frame) % botStride === 0) {
+          const botDt = nearPlayer ? dt : dt * botStride;
+          updateBot(
+            f, this.fighters, this.map, this.zone, botDt, this.time,
+            this.bullets, this.melees, this.frags, this.smokes, this.rng,
+          );
+        }
       }
       if (f.state === "alive") {
         f.x = clamp(f.x, 40, MAP_SIZE - 40);
@@ -182,7 +191,16 @@ export class World {
       }
     }
 
-    const onHit = (attacker: Fighter, victim: Fighter, _dmg: number, weaponId: string) => {
+    const onHit = (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => {
+      if (attacker.id === this.player.id || victim.id === this.player.id) {
+        this.hitMarkers.push({
+          x: victim.x + (this.rng() - 0.5) * 20,
+          y: victim.y - 28,
+          text: String(Math.round(dmg)),
+          life: 0.7,
+          crit: dmg >= 40,
+        });
+      }
       if (victim.state === "dead" && !this.deathOrder.includes(victim.id)) {
         this.handleKill(attacker, victim, weaponId);
       }
@@ -193,12 +211,21 @@ export class World {
       if (v.state === "dead") this.handleKill(a, v, w);
     });
     updateMelees(this.melees, this.fighters, dt, (a, v, d, w) => {
+      onHit(a, v, d, w);
       if (v.state === "dead") this.handleKill(a, v, w);
     });
-    updateFrags(this.frags, this.fighters, dt, (a, v, _d, w) => {
+    updateFrags(this.frags, this.fighters, dt, (a, v, d, w) => {
+      onHit(a, v, d, w);
       if (v.state === "dead") this.handleKill(a, v, w);
     });
     updateSmokes(this.smokes, dt);
+
+    for (let i = this.hitMarkers.length - 1; i >= 0; i--) {
+      const m = this.hitMarkers[i]!;
+      m.life -= dt;
+      m.y -= 28 * dt;
+      if (m.life <= 0) this.hitMarkers.splice(i, 1);
+    }
 
     // detect deaths from bullets that set state
     for (const f of this.fighters) {
@@ -249,7 +276,7 @@ export class World {
       p.aim = angleTo(p, { x: worldMx, y: worldMy });
       // land after time or press
       p.botTimer = (p.botTimer ?? 0) + dt;
-      if (input.pressed(" ") || input.pressed("f") || (p.botTimer ?? 0) > 6) {
+      if (input.pressed(" ") || input.pressed("f") || (p.botTimer ?? 0) > 3.5) {
         p.state = "alive";
         p.invuln = 0.4;
       }
@@ -280,12 +307,18 @@ export class World {
     if (input.pressed("z")) startHeal(p, "energy_drink");
     if (input.pressed("x")) startHeal(p, "painkiller");
 
-    // loot
-    const near = this.nearestLoot(p.x, p.y, 40);
+    // loot — hold F/E to vacuum nearby piles
+    const near = this.nearestLoot(p.x, p.y, 48);
     if (near) {
-      this.prompt = `F — ${near.items.map(lootLabel).join(", ")}`;
-      if (input.pressed("f") || input.pressed("e")) {
+      const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
+      this.prompt = `F — ${labels}`;
+      if (input.down("f") || input.down("e") || input.pressed("f") || input.pressed("e")) {
         this.pickupLoot(p, near);
+        // also grab other piles in range
+        for (const pile of this.map.loot) {
+          if (pile === near || pile.items.length === 0) continue;
+          if (dist(p, pile) < 48) this.pickupLoot(p, pile);
+        }
       }
     }
 

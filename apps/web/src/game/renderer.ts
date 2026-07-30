@@ -36,7 +36,7 @@ export class Renderer {
     return this.ctx.createPattern(c, "repeat");
   }
 
-  draw(world: World, w: number, h: number): void {
+  draw(world: World, w: number, h: number, mouseX = w / 2, mouseY = h / 2): void {
     const { ctx } = this;
     const cam = world.camera;
     ctx.save();
@@ -56,9 +56,46 @@ export class Renderer {
     this.drawBullets(world);
     this.drawFrags(world);
     this.drawPlane(world);
+    this.drawHitMarkers(world);
 
     ctx.restore();
+    this.drawCrosshair(mouseX, mouseY, world);
     this.drawMinimap(world);
+  }
+
+  private drawHitMarkers(world: World): void {
+    const { ctx } = this;
+    for (const m of world.hitMarkers) {
+      ctx.globalAlpha = Math.min(1, m.life * 2);
+      ctx.fillStyle = m.crit ? "#d4a04a" : "#f0e8d8";
+      ctx.font = m.crit ? "700 16px 'IBM Plex Sans'" : "600 13px 'IBM Plex Sans'";
+      ctx.textAlign = "center";
+      ctx.fillText(m.text, m.x, m.y);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  private drawCrosshair(mx: number, my: number, world: World): void {
+    if (world.player.state === "plane" || world.player.state === "dead") return;
+    const { ctx } = this;
+    const gap = world.player.state === "parachute" ? 10 : 5;
+    const len = 7;
+    ctx.save();
+    ctx.strokeStyle = "rgba(240, 232, 216, 0.9)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(mx - gap - len, my);
+    ctx.lineTo(mx - gap, my);
+    ctx.moveTo(mx + gap, my);
+    ctx.lineTo(mx + gap + len, my);
+    ctx.moveTo(mx, my - gap - len);
+    ctx.lineTo(mx, my - gap);
+    ctx.moveTo(mx, my + gap);
+    ctx.lineTo(mx, my + gap + len);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(212, 160, 74, 0.9)";
+    ctx.fillRect(mx - 1, my - 1, 2, 2);
+    ctx.restore();
   }
 
   private drawTerrain(map: IslandMap): void {
