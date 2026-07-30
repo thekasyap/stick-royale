@@ -237,6 +237,20 @@ export class Renderer {
     ctx.save();
     ctx.translate(f.x, f.y);
 
+    if (f.state === "parachute") {
+      ctx.fillStyle = "rgba(240,232,216,0.35)";
+      ctx.beginPath();
+      ctx.arc(0, -36, 22, Math.PI, 0);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(240,232,216,0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-18, -30);
+      ctx.lineTo(0, -8);
+      ctx.lineTo(18, -30);
+      ctx.stroke();
+    }
+
     // shadow
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.beginPath();
