@@ -91,7 +91,7 @@ class GameApp {
     const viewW = window.innerWidth;
     const viewH = window.innerHeight;
     this.world.update(dt, this.input, viewW, viewH);
-    this.renderer.draw(this.world, viewW, viewH);
+    this.renderer.draw(this.world, viewW, viewH, this.input.mouseX, this.input.mouseY);
     this.syncHud(this.world);
     this.input.endFrame();
 
