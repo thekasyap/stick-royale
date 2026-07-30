@@ -303,7 +303,7 @@ export class World {
 
     if (input.pressed("r")) startReload(p);
     if (input.pressed("q")) startHeal(p, "bandage");
-    if (input.pressed("4") && input.down("shift")) startHeal(p, "medkit");
+    if (input.pressed("c")) startHeal(p, "medkit");
     if (input.pressed("z")) startHeal(p, "energy_drink");
     if (input.pressed("x")) startHeal(p, "painkiller");
 

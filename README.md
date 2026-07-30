@@ -30,6 +30,7 @@ Open [http://localhost:5173](http://localhost:5173).
 | Jump (plane/chute) | Space / F |
 | Weapon slots | 1 Primary · 2 Sidearm · 3 Melee · 4 Throwables |
 | Bandage | Q |
+| Medkit | C |
 | Energy / Painkiller | Z / X |
 
 ## Monorepo
