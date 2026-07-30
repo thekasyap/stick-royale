@@ -1,0 +1,13 @@
+name = "stick-royale-server"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+
+[durable_objects]
+bindings = [
+  { name = "MATCH_ROOM", class_name = "MatchRoom" },
+  { name = "LOBBY", class_name = "Lobby" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["MatchRoom", "Lobby"]
