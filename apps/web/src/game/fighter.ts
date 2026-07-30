@@ -206,6 +206,9 @@ export function tryPickup(f: Fighter, item: LootKind): boolean {
         ammoInMag: def.magSize,
         attachments: {},
       };
+      if (def.ammo) {
+        f.ammo[def.ammo] = (f.ammo[def.ammo] ?? 0) + def.magSize;
+      }
       if (def.slot === "secondary") {
         f.secondary = inst;
         f.activeSlot = 1;
