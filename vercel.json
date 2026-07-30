@@ -1,0 +1,7 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "buildCommand": "npm run build -w @stick-royale/web",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "npm install",
+  "framework": null
+}
