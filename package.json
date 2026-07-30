@@ -1,0 +1,21 @@
+{
+  "name": "stick-royale",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lightweight stick-figure browser battle royale",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @stick-royale/web",
+    "build": "npm run build -w @stick-royale/shared && npm run build -w @stick-royale/web",
+    "build:shared": "npm run build -w @stick-royale/shared",
+    "dev:server": "npm run dev -w @stick-royale/server",
+    "typecheck": "npm run typecheck -w @stick-royale/shared && npm run typecheck -w @stick-royale/web"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Stick Royale</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="lobby" class="lobby">
+        <div class="lobby-atmosphere" aria-hidden="true"></div>
+        <div class="lobby-content">
+          <p class="lobby-tag">Offline Solo · Bot Fill</p>
+          <h1 class="brand">STICK ROYALE</h1>
+          <p class="lobby-sub">Drop in. Loot up. Be the last stick standing.</p>
+
+          <form id="lobby-form" class="lobby-form" autocomplete="off">
+            <label>
+              Nickname
+              <input id="nickname" type="text" maxlength="16" placeholder="StickHero" required />
+            </label>
+
+            <div class="row">
+              <label>
+                Mode
+                <select id="mode">
+                  <option value="classic">Classic Solo</option>
+                  <option value="vs_ai">VS AI</option>
+                </select>
+              </label>
+              <label>
+                Difficulty
+                <select id="difficulty">
+                  <option value="easy" selected>Easy</option>
+                  <option value="normal">Normal</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+
+            <button type="submit" class="cta" id="start-btn">DROP IN</button>
+            <p class="hint">WASD move · Mouse aim · LMB shoot · RMB ADS · R reload · F loot · 1–4 slots · Q bandage · C medkit</p>
+          </form>
+        </div>
+      </div>
+
+      <canvas id="game" width="1280" height="720"></canvas>
+
+      <div id="hud" class="hud hidden">
+        <div class="hud-top">
+          <div class="alive-pill"><span id="alive-count">48</span> ALIVE</div>
+          <div class="kill-feed" id="kill-feed"></div>
+          <div class="phase-pill" id="phase-info">PHASE 1</div>
+        </div>
+        <canvas id="minimap" width="160" height="160"></canvas>
+        <div class="hud-bottom">
+          <div class="hp-block">
+            <div class="bar hp"><div id="hp-fill"></div></div>
+            <div class="bar boost"><div id="boost-fill"></div></div>
+            <div class="hp-text"><span id="hp-text">100</span> HP</div>
+          </div>
+          <div class="weapon-block">
+            <div id="weapon-name">Sidekick</div>
+            <div id="ammo-text">15 / 60</div>
+          </div>
+          <div class="armor-block" id="armor-block">
+            <span id="helmet-lvl">H0</span>
+            <span id="vest-lvl">V0</span>
+            <span id="bag-lvl">B0</span>
+          </div>
+        </div>
+        <div id="prompt" class="prompt"></div>
+        <div id="drop-banner" class="drop-banner hidden">JUMP · SPACE / F</div>
+      </div>
+
+      <div id="results" class="results hidden">
+        <div class="results-card">
+          <h2 id="results-title">CHICKEN DINNER</h2>
+          <p id="results-place">#1</p>
+          <div class="results-stats">
+            <div><span id="stat-kills">0</span><label>Kills</label></div>
+            <div><span id="stat-damage">0</span><label>Damage</label></div>
+            <div><span id="stat-alive">0</span><label>Survived</label></div>
+          </div>
+          <button id="play-again" class="cta">PLAY AGAIN</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
