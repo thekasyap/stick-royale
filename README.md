@@ -1,8 +1,8 @@
 # Stick Royale
 
-Lightweight **stick-figure battle royale** for the browser — BGMI/PUBG-inspired systems, original names only, muted tan/olive art.
+Lightweight **stick-figure battle royale** for the browser — BGMI/PUBG-inspired systems, original names only, muted tan/olive art. **Under 3 MB** client payload — no Unity, no downloads.
 
-**Play Offline Solo + Bots first** (no server required). Cloudflare Durable Objects are scaffolded for future online matches.
+**Play Offline instantly** (48-player bot-fill). Cloudflare Durable Objects power online party codes and future authoritative matches.
 
 ## Quick start
 
@@ -14,30 +14,46 @@ npm run dev
 Open [http://localhost:5173](http://localhost:5173).
 
 1. Enter a nickname  
-2. Pick **Classic Solo** + **Easy**  
-3. **DROP IN** → jump from the plane → loot → fight bots → survive the blue zone → Chicken Dinner  
+2. Pick **Classic** or **VS AI**, **Solo / Duo / Squad**, and **Easy / Normal / Hard**  
+3. **DROP IN** → jump from the plane → loot → fight bots → survive the blue zone → **Chicken Dinner**
 
-### Controls
+## Controls
 
 | Action | Key |
 |--------|-----|
-| Move | WASD |
-| Aim | Mouse |
-| Shoot | LMB |
+| Move | WASD (virtual stick on mobile) |
+| Aim | Mouse / touch drag (right side) |
+| Shoot | LMB / touch fire |
 | ADS | RMB / Shift |
 | Reload | R |
 | Loot / Interact | F or E |
-| Jump (plane/chute) | Space / F |
+| Jump / Deploy chute | Space / F |
+| Map ping | G (Shift+G = enemy) |
+| Revive teammate | Hold H (Duo/Squad) |
+| Vehicle enter/exit | V |
 | Weapon slots | 1 Primary · 2 Sidearm · 3 Melee · 4 Throwables |
-| Bandage | Q |
-| Medkit | C |
-| Energy / Painkiller | Z / X |
+| Heals | Q bandage · C medkit · Z energy · X painkiller |
+
+## Features
+
+- **48-player lobbies** with bot-fill (Classic) or all-bot VS AI practice  
+- **Plane drop** + parachute glide toward cursor  
+- **Hand-authored island** with POIs: Pine Town, School Yard, Dockside, Farm, Ruins, Lumber Mill  
+- **Loot tiers** (hot / mid / quiet), death crates, **care packages**, **red zone**  
+- **Blue zone** 7 phases with white circle preview  
+- **Weapons** (original names): Sparkwave, Ironclad, Buzzsaw, Rattler, Thumper, Longreach, Skyline, Sidekick, Pan  
+- **Armor / helmet / backpack** Lv1–3, attachments, throwables  
+- **Duo/Squad**: knockdown, crawl, revive, team pings, ally markers  
+- **Vehicles**: buggy + boat  
+- **Bot AI** Easy / Normal / Hard (aim, reaction, loot, zone rotate)  
+- **Web Audio** synth SFX — no asset downloads  
+- **Chicken Dinner** results screen with K/D, damage, survival time  
 
 ## Monorepo
 
 ```
-apps/web/          Vite + TypeScript + Canvas 2D (offline sim)
-apps/server/       Cloudflare Worker + MatchRoom / Lobby DOs (scaffold)
+apps/web/          Vite + TypeScript + Canvas 2D (offline sim + UI)
+apps/server/       Cloudflare Worker + Lobby / MatchRoom Durable Objects
 packages/shared/   Weapons, zone phases, POIs, protocol types
 ```
 
@@ -45,29 +61,41 @@ packages/shared/   Weapons, zone phases, POIs, protocol types
 |--------|------|
 | `npm run dev` | Web client |
 | `npm run build` | Production web build |
-| `npm run dev:server` | Wrangler DO scaffold |
-| `npm run typecheck` | TS check |
+| `npm run dev:server` | Wrangler local DO server |
+| `npm run typecheck` | TypeScript check |
 
 ## Deploy
 
-**Web (Vercel):** connect the repo; `vercel.json` builds `apps/web` and publishes `apps/web/dist`.
+### Web (Vercel)
 
-**Server (Cloudflare):**
+Connect the repo. `vercel.json` builds `apps/web` and publishes `apps/web/dist`.
+
+Optional env:
+
+```bash
+VITE_PARTY_HOST=your-worker.your-subdomain.workers.dev
+```
+
+### Server (Cloudflare)
 
 ```bash
 cd apps/server
 npx wrangler deploy
 ```
 
-Online authoritative gameplay is not required for Offline Solo.
+Routes:
+
+- `GET /health` — status  
+- `POST /api/party` — create/join party code  
+- `WS /ws/lobby` — lobby matchmaking  
+- `WS /ws/match/:id` — match room (scaffold; offline sim is fully playable today)
 
 ## Design notes
 
-- Lobby size **48** with bot fill  
-- Bot difficulties: Easy / Normal / Hard (aim error, reaction, loot priority, zone rotate)  
-- Weapons: Sparkwave, Ironclad, Buzzsaw, Rattler, Thumper, Longreach, Skyline, Sidekick, Pan  
-- POIs: Pine Town, School Yard, Dockside, Farm, Ruins, and more  
-- Guest UUID stored in `localStorage`
+- Guest UUID in `localStorage`  
+- Offline sim runs entirely client-side — no server required to play  
+- Online DO multiplayer shares protocol types in `packages/shared`  
+- Target: mid laptop **50+ FPS** with 48 entities  
 
 ## License
 

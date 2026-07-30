@@ -412,6 +412,22 @@ body,
   color: var(--muted);
 }
 
+.results-card h2.winner {
+  animation: stamp 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  color: var(--accent);
+}
+
+@keyframes stamp {
+  from { transform: scale(2) rotate(-6deg); opacity: 0; }
+  to { transform: scale(1) rotate(-2deg); opacity: 1; }
+}
+
+.hint.subtle {
+  opacity: 0.65;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 640px) {
   .brand { font-size: 3.8rem; }
   #minimap { width: 100px; height: 100px; }

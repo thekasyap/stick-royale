@@ -28,10 +28,21 @@
               <label>
                 Mode
                 <select id="mode">
-                  <option value="classic">Classic Solo</option>
+                  <option value="classic">Classic</option>
                   <option value="vs_ai">VS AI</option>
                 </select>
               </label>
+              <label>
+                Team
+                <select id="party-size">
+                  <option value="solo" selected>Solo</option>
+                  <option value="duo">Duo</option>
+                  <option value="squad">Squad</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="row">
               <label>
                 Difficulty
                 <select id="difficulty">
@@ -40,10 +51,15 @@
                   <option value="hard">Hard</option>
                 </select>
               </label>
+              <label>
+                Party code
+                <input id="party-code" type="text" maxlength="6" placeholder="Optional" />
+              </label>
             </div>
 
             <button type="submit" class="cta" id="start-btn">DROP IN</button>
-            <p class="hint">WASD move · Mouse aim · LMB shoot · RMB ADS · R reload · F loot · 1–4 slots · Q bandage · C medkit</p>
+            <p class="hint">WASD · Mouse aim · LMB shoot · F loot · G ping · H revive · V vehicle · 1–4 slots</p>
+            <p class="hint subtle" id="party-hint"></p>
           </form>
         </div>
       </div>
