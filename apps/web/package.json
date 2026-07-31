@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@stick-royale/shared": "*"
+    "@stick-royale/shared": "workspace:*",
+    "@stick-royale/sim": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

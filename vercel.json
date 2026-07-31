@@ -1,7 +1,7 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
-  "buildCommand": "npm run build -w @stick-royale/web",
+  "buildCommand": "pnpm --filter @stick-royale/shared build && pnpm --filter @stick-royale/sim build && pnpm --filter @stick-royale/web build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "npm install",
-  "framework": null
+  "installCommand": "pnpm install",
+  "framework": null,
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }

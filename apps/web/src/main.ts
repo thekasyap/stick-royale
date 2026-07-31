@@ -1,8 +1,10 @@
 import type { BotDifficulty, GameMode, PartySize } from "@stick-royale/shared";
+import type { MatchConfig, RenderBundle } from "@stick-royale/sim";
+import { WEAPONS } from "@stick-royale/shared";
 import { GameAudio } from "./game/audio";
 import { Input } from "./game/input";
+import { MatchHost } from "./game/match-host";
 import { Renderer } from "./game/renderer";
-import { World } from "./game/world";
 import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
@@ -30,7 +32,8 @@ class GameApp {
   private input = new Input(this.canvas);
   private renderer = new Renderer(this.ctx, this.miniCtx);
   private audio = new GameAudio();
-  private world: World | null = null;
+  private host: MatchHost | null = null;
+  private bundle: RenderBundle | null = null;
   private raf = 0;
   private last = 0;
   private running = false;
@@ -41,19 +44,16 @@ class GameApp {
     this.resize();
     window.addEventListener("resize", () => this.resize());
     $("play-again").addEventListener("click", () => this.backToLobby());
-    const audioOn = localStorage.getItem(AUDIO_KEY) !== "0";
-    this.audio.setEnabled(audioOn);
+    this.audio.setEnabled(localStorage.getItem(AUDIO_KEY) !== "0");
   }
 
   private bindLobby(): void {
     const nick = $("nickname") as HTMLInputElement;
     nick.value = localStorage.getItem(NICK_KEY) || randomNick();
     const hint = $("party-hint");
-    if (partyHostAvailable()) {
-      hint.textContent = "Online party codes available — offline play works instantly.";
-    } else {
-      hint.textContent = "Playing offline with bot-fill (48 players). Deploy Cloudflare for online parties.";
-    }
+    hint.textContent = partyHostAvailable()
+      ? "Online party codes available — sim runs in Web Worker when supported."
+      : "Offline 48-player bot-fill. Deploy Cloudflare Worker for online parties.";
 
     $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -62,15 +62,10 @@ class GameApp {
       const mode = ($("mode") as HTMLSelectElement).value as GameMode;
       const partySize = ($("party-size") as HTMLSelectElement).value as PartySize;
       const difficulty = ($("difficulty") as HTMLSelectElement).value as BotDifficulty;
-      const partyCode = ($("party-code") as HTMLInputElement).value.trim().toUpperCase();
-
-      if (!partyCode && partyHostAvailable()) {
+      if (!($("party-code") as HTMLInputElement).value.trim() && partyHostAvailable()) {
         const created = await createParty(nickname);
-        if (created) {
-          ($("party-code") as HTMLInputElement).value = created.code;
-        }
+        if (created) ($("party-code") as HTMLInputElement).value = created.code;
       }
-
       this.startMatch({ nickname, mode, partySize, difficulty });
     });
   }
@@ -86,16 +81,14 @@ class GameApp {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  private startMatch(config: {
-    nickname: string;
-    mode: GameMode;
-    partySize: PartySize;
-    difficulty: BotDifficulty;
-  }): void {
+  private startMatch(config: MatchConfig): void {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
-    this.world = new World(config, this.audio);
+    this.host = new MatchHost((bundle) => {
+      this.bundle = bundle;
+    });
+    this.host.start(config);
     this.running = true;
     this.last = performance.now();
     cancelAnimationFrame(this.raf);
@@ -104,7 +97,9 @@ class GameApp {
 
   private backToLobby(): void {
     this.running = false;
-    this.world = null;
+    this.host?.destroy();
+    this.host = null;
+    this.bundle = null;
     cancelAnimationFrame(this.raf);
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
@@ -112,42 +107,57 @@ class GameApp {
   }
 
   private loop = (now: number): void => {
-    if (!this.running || !this.world) return;
+    if (!this.running || !this.host) return;
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-
     const viewW = window.innerWidth;
     const viewH = window.innerHeight;
-    this.world.update(dt, this.input, viewW, viewH);
-    this.renderer.draw(this.world, viewW, viewH, this.input.mouseX, this.input.mouseY);
-    this.syncHud(this.world);
+    this.host.tick(dt, this.input, viewW, viewH);
+    if (this.bundle) {
+      this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY);
+      this.syncHud(this.bundle);
+    }
     this.input.endFrame();
 
-    if (this.world.matchOver && this.world.result) {
-      this.showResults(this.world);
+    if (this.host.matchOver && this.host.result) {
+      this.showResults(this.host.result);
       return;
     }
 
     this.raf = requestAnimationFrame(this.loop);
   };
 
-  private syncHud(world: World): void {
-    $("alive-count").textContent = String(world.aliveCount());
-    $("phase-info").textContent = world.phaseLabel();
-    const p = world.player;
-    const hpFill = $("hp-fill") as HTMLDivElement;
-    const boostFill = $("boost-fill") as HTMLDivElement;
-    hpFill.style.width = `${Math.max(0, p.hp)}%`;
-    boostFill.style.width = `${Math.max(0, p.boost)}%`;
+  private syncHud(bundle: RenderBundle): void {
+    $("alive-count").textContent = String(
+      bundle.fighters.filter((f) => f.state !== "dead").length,
+    );
+    $("phase-info").textContent = `PHASE ${bundle.zone.phaseIndex + 1}`;
+    const p = bundle.player;
+    ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
+    ($("boost-fill") as HTMLDivElement).style.width = `${Math.max(0, p.boost)}%`;
     $("hp-text").textContent = String(Math.ceil(Math.max(0, p.hp)));
     $("helmet-lvl").textContent = `H${p.helmet}`;
     $("vest-lvl").textContent = `V${p.vest}`;
     $("bag-lvl").textContent = `B${p.backpack}`;
 
-    const wh = world.weaponHud();
-    $("weapon-name").textContent = wh.name;
-    $("ammo-text").textContent = wh.ammo;
-    $("prompt").textContent = world.prompt;
+    let wName = "—";
+    let ammo = "";
+    if (p.activeSlot === 3) {
+      wName = "Throwables";
+      ammo = `Frag ${p.frags} · Smoke ${p.smokes}`;
+    } else {
+      const gun =
+        p.activeSlot === 0 ? p.primary : p.activeSlot === 1 ? p.secondary : p.melee;
+      if (gun) {
+        const def = WEAPONS[gun.weaponId];
+        wName = def?.name ?? gun.weaponId;
+        if (def?.ammo) ammo = `${gun.ammoInMag} / ${p.ammo[def.ammo] ?? 0}`;
+        else ammo = "∞";
+      }
+    }
+    $("weapon-name").textContent = wName;
+    $("ammo-text").textContent = ammo;
+    $("prompt").textContent = bundle.prompt;
 
     const drop = $("drop-banner");
     if (p.state === "plane") {
@@ -156,12 +166,9 @@ class GameApp {
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
       drop.textContent = "DEPLOY · SPACE";
-    } else {
-      drop.classList.add("hidden");
-    }
+    } else drop.classList.add("hidden");
 
-    const feed = $("kill-feed");
-    feed.innerHTML = world.killFeed
+    $("kill-feed").innerHTML = bundle.killFeed
       .slice(0, 5)
       .map((k) => {
         const tag = k.knocked ? " knocked " : " ";
@@ -170,8 +177,7 @@ class GameApp {
       .join("");
   }
 
-  private showResults(world: World): void {
-    const r = world.result!;
+  private showResults(r: NonNullable<RenderBundle["result"]>): void {
     $("hud").classList.add("hidden");
     $("results").classList.remove("hidden");
     const title = $("results-title");
@@ -181,6 +187,8 @@ class GameApp {
     $("stat-kills").textContent = String(r.kills);
     $("stat-damage").textContent = String(Math.round(r.damage));
     $("stat-alive").textContent = `${Math.floor(r.aliveTime)}s`;
+    if (r.winner) this.audio.chickenDinner();
+    else this.audio.eliminated();
     this.running = false;
   }
 }

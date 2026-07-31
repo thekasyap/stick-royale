@@ -10,7 +10,7 @@ import {
   type GameMode,
   type PartySize,
 } from "@stick-royale/shared";
-import type { GameAudio } from "./audio";
+import type { GameInput } from "./game-input.js";
 import { assignBotNames, updateBot } from "./bots";
 import {
   resolveCollision,
@@ -38,7 +38,6 @@ import {
   tryPickup,
   type Fighter,
 } from "./fighter";
-import type { Input } from "./input";
 import { generateMap, lootLabel, type IslandMap, type LootKind, type LootPile } from "./mapgen";
 import {
   carePackageLoot,
@@ -102,29 +101,29 @@ export class World {
   partySize: PartySize;
   camera = { x: 0, y: 0, zoom: 1 };
   prompt = "";
-  audio: GameAudio | null = null;
   private deathOrder: string[] = [];
   private startedAt = 0;
+  private nowMs: () => number;
   private nextCare = 75;
   private nextRed = 60;
   private lastZonePhase = 0;
   private allowKnock: boolean;
   private pingSeq = 0;
 
-  constructor(config: MatchConfig, audio?: GameAudio) {
+  constructor(config: MatchConfig, _audio?: unknown, startedAtMs?: number) {
+    this.nowMs = () => Date.now();
     this.seed = config.seed ?? (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     this.rng = createRng(this.seed);
     this.difficulty = config.difficulty;
     this.mode = config.mode;
     this.partySize = config.partySize;
     this.allowKnock = config.partySize !== "solo";
-    this.audio = audio ?? null;
     this.map = generateMap(this.seed);
     this.zone = createZone(this.rng);
     this.vehicles = spawnVehicles(this.rng);
     this.setupPlane();
     this.spawnFighters(config.nickname);
-    this.startedAt = performance.now();
+    this.startedAt = startedAtMs ?? this.nowMs();
   }
 
   private setupPlane(): void {
@@ -200,7 +199,7 @@ export class World {
     }
   }
 
-  update(dt: number, input: Input, viewW: number, viewH: number): void {
+  update(dt: number, input: GameInput, viewW: number, viewH: number): void {
     if (this.matchOver) return;
     this.time += dt;
 
@@ -293,7 +292,7 @@ export class World {
           life: 0.7,
           crit: dmg >= 40,
         });
-        if (attacker.id === this.player.id) this.audio?.hit(dmg >= 40);
+        if (attacker.id === this.player.id) { /* audio handled by client */ }
       }
       if (victim.state === "downed" && !this.deathOrder.includes(victim.id)) {
         this.pushFeed(attacker, victim, weaponId, true);
@@ -333,7 +332,7 @@ export class World {
 
     const prevPhase = this.zone.phaseIndex;
     updateZone(this.zone, dt, this.rng);
-    if (this.zone.phaseIndex > prevPhase) this.audio?.zoneWarning();
+    if (this.zone.phaseIndex > prevPhase) { /* zone warning — client */ }
 
     this.pings = this.pings.filter((p) => p.until > this.time);
     this.updateCamera(viewW, viewH);
@@ -372,7 +371,7 @@ export class World {
         activeUntil: this.time + 9,
         active: false,
       };
-      this.audio?.redZone();
+      /* red zone sfx — client */
     }
     this.redZone = tickRedZone(this.redZone, this.fighters, this.time, dt, (f, dmg) => {
       f.hp -= dmg;
@@ -380,7 +379,7 @@ export class World {
     });
   }
 
-  private updatePlayer(dt: number, input: Input, viewW: number, viewH: number): void {
+  private updatePlayer(dt: number, input: GameInput, viewW: number, viewH: number): void {
     const p = this.player;
     this.prompt = "";
 
@@ -393,7 +392,7 @@ export class World {
           x: this.camera.x + (input.mouseX - viewW / 2) / this.camera.zoom,
           y: this.camera.y + (input.mouseY - viewH / 2) / this.camera.zoom,
         };
-        this.audio?.jump();
+        /* jump sfx — client */
       }
       if (this.plane.pathT > 0.85) p.state = "parachute";
       return;
@@ -447,7 +446,7 @@ export class World {
         /* fire disabled in vehicle for v1 */
       }
       const revived = tickRevive(p, this.fighters, dt, input.down("h"));
-      if (revived) this.audio?.loot();
+      if (revived) { /* revive sfx */ }
       return;
     }
 
@@ -474,7 +473,7 @@ export class World {
     );
     if (downedMate) this.prompt = "H — revive teammate";
     const revived = tickRevive(p, this.fighters, dt, input.down("h"));
-    if (revived) this.audio?.loot();
+    if (revived) { /* loot sfx */ }
 
     const near = this.nearestLoot(p.x, p.y, 48);
     const nearCare = this.carePackages.find((c) => c.landed && dist(p, c) < 52);
@@ -484,7 +483,7 @@ export class World {
         for (const item of nearCare.items) tryPickup(p, item);
         nearCare.items = [];
         this.carePackages = this.carePackages.filter((c) => c.items.length > 0 || !c.landed);
-        this.audio?.loot();
+        /* care package loot */
       }
     } else if (near && !downedMate) {
       const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
@@ -496,7 +495,7 @@ export class World {
           if (pile === near || pile.items.length === 0) continue;
           if (dist(p, pile) < 48) this.pickupLoot(p, pile);
         }
-        if (near.items.length < before) this.audio?.loot();
+        if (near.items.length < before) { /* loot sfx */ }
       }
     }
 
@@ -507,7 +506,7 @@ export class World {
       const gun = activeWeapon(p);
       const cat = gun ? WEAPONS[gun.weaponId]?.category : "ar";
       if (tryFire(p, ads, move.x !== 0 || move.y !== 0, this.bullets, this.melees, this.frags, this.smokes, this.rng)) {
-        this.audio?.shoot(cat ?? "ar");
+        /* shoot sfx — client */
       }
     }
 
@@ -653,9 +652,9 @@ export class World {
         kills: this.player.kills,
         damage: this.player.damageDealt,
         winner: false,
-        aliveTime: (performance.now() - this.startedAt) / 1000,
+        aliveTime: (this.nowMs() - this.startedAt) / 1000,
       };
-      this.audio?.eliminated();
+      /* eliminated sfx — client */
       return;
     }
 
@@ -671,9 +670,9 @@ export class World {
         kills: this.player.kills,
         damage: this.player.damageDealt,
         winner: true,
-        aliveTime: (performance.now() - this.startedAt) / 1000,
+        aliveTime: (this.nowMs() - this.startedAt) / 1000,
       };
-      this.audio?.chickenDinner();
+      /* chicken dinner sfx — client */
     }
   }
 
@@ -702,5 +701,32 @@ export class World {
 
   teammates(): Fighter[] {
     return this.fighters.filter((f) => f.teamId === this.player.teamId && f.id !== this.player.id);
+  }
+
+  /** Serializable render state for Web Worker → main thread */
+  exportRenderBundle() {
+    return {
+      map: this.map,
+      fighters: this.fighters,
+      player: this.player,
+      zone: this.zone,
+      bullets: this.bullets,
+      melees: this.melees,
+      frags: this.frags,
+      smokes: this.smokes,
+      vehicles: this.vehicles,
+      carePackages: this.carePackages,
+      redZone: this.redZone,
+      pings: this.pings,
+      killFeed: this.killFeed,
+      hitMarkers: this.hitMarkers,
+      time: this.time,
+      plane: this.plane,
+      planePath: this.planePath,
+      matchOver: this.matchOver,
+      result: this.result,
+      camera: this.camera,
+      prompt: this.prompt,
+    };
   }
 }

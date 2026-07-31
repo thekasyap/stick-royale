@@ -3,19 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "description": "Lightweight stick-figure browser battle royale",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.33.3",
   "scripts": {
-    "dev": "npm run dev -w @stick-royale/web",
-    "build": "npm run build -w @stick-royale/shared && npm run build -w @stick-royale/web",
-    "build:shared": "npm run build -w @stick-royale/shared",
-    "dev:server": "npm run dev -w @stick-royale/server",
-    "typecheck": "npm run typecheck -w @stick-royale/shared && npm run typecheck -w @stick-royale/web"
+    "dev": "pnpm --filter @stick-royale/web dev",
+    "build": "pnpm --filter @stick-royale/shared build && pnpm --filter @stick-royale/sim build && pnpm --filter @stick-royale/web build",
+    "build:shared": "pnpm --filter @stick-royale/shared build",
+    "build:sim": "pnpm --filter @stick-royale/sim build",
+    "dev:server": "pnpm --filter @stick-royale/server dev",
+    "typecheck": "pnpm --filter @stick-royale/shared --filter @stick-royale/sim --filter @stick-royale/web --filter @stick-royale/server run typecheck"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT"
 }

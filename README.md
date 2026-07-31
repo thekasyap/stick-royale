@@ -7,8 +7,8 @@ Lightweight **stick-figure battle royale** for the browser — BGMI/PUBG-inspire
 ## Quick start
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173).
