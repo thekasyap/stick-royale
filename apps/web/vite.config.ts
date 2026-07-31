@@ -6,7 +6,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@stick-royale/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),
+      "@stick-royale/sim": path.resolve(__dirname, "../../packages/sim/src/index.ts"),
     },
+  },
+  worker: {
+    format: "es",
   },
   server: {
     port: 5173,

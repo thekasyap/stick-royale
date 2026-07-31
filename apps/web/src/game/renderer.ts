@@ -1,7 +1,7 @@
 import { MAP_SIZE, WEAPONS } from "@stick-royale/shared";
-import { activeWeapon, type Fighter } from "./fighter";
-import type { IslandMap } from "./mapgen";
-import type { World } from "./world";
+import type { RenderBundle } from "@stick-royale/sim";
+import { activeWeapon, type Fighter } from "@stick-royale/sim";
+import type { IslandMap } from "@stick-royale/sim";
 
 const GRASS_A = "#3d4f32";
 const GRASS_B = "#455836";
@@ -36,7 +36,7 @@ export class Renderer {
     return this.ctx.createPattern(c, "repeat");
   }
 
-  draw(world: World, w: number, h: number, mouseX = w / 2, mouseY = h / 2): void {
+  draw(world: RenderBundle, w: number, h: number, mouseX = w / 2, mouseY = h / 2): void {
     const { ctx } = this;
     const cam = world.camera;
     ctx.save();
@@ -67,7 +67,7 @@ export class Renderer {
     this.drawMinimap(world);
   }
 
-  private drawHitMarkers(world: World): void {
+  private drawHitMarkers(world: RenderBundle): void {
     const { ctx } = this;
     for (const m of world.hitMarkers) {
       ctx.globalAlpha = Math.min(1, m.life * 2);
@@ -79,7 +79,7 @@ export class Renderer {
     }
   }
 
-  private drawCrosshair(mx: number, my: number, world: World): void {
+  private drawCrosshair(mx: number, my: number, world: RenderBundle): void {
     if (world.player.state === "plane" || world.player.state === "dead") return;
     const { ctx } = this;
     const gap = world.player.state === "parachute" ? 10 : 5;
@@ -187,7 +187,7 @@ export class Renderer {
     }
   }
 
-  private drawZone(world: World): void {
+  private drawZone(world: RenderBundle): void {
     const { ctx } = this;
     const z = world.zone;
     ctx.save();
@@ -213,7 +213,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawRedZone(world: World): void {
+  private drawRedZone(world: RenderBundle): void {
     const rz = world.redZone;
     if (!rz) return;
     const { ctx } = this;
@@ -231,7 +231,7 @@ export class Renderer {
     }
   }
 
-  private drawCarePackages(world: World): void {
+  private drawCarePackages(world: RenderBundle): void {
     const { ctx } = this;
     for (const cp of world.carePackages) {
       const y = cp.landed ? cp.y : cp.y - cp.height;
@@ -251,7 +251,7 @@ export class Renderer {
     }
   }
 
-  private drawVehicles(world: World): void {
+  private drawVehicles(world: RenderBundle): void {
     const { ctx } = this;
     for (const v of world.vehicles) {
       ctx.save();
@@ -275,7 +275,7 @@ export class Renderer {
     }
   }
 
-  private drawPings(world: World): void {
+  private drawPings(world: RenderBundle): void {
     const { ctx } = this;
     for (const ping of world.pings) {
       if (ping.teamId !== world.player.teamId) continue;
@@ -303,7 +303,7 @@ export class Renderer {
     }
   }
 
-  private drawFighters(world: World): void {
+  private drawFighters(world: RenderBundle): void {
     for (const f of world.fighters) {
       if (f.state === "dead") continue;
       if (f.state === "plane") continue;
@@ -441,7 +441,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawBullets(world: World): void {
+  private drawBullets(world: RenderBundle): void {
     const { ctx } = this;
     ctx.strokeStyle = "#f5e6c8";
     ctx.lineWidth = 2;
@@ -453,7 +453,7 @@ export class Renderer {
     }
   }
 
-  private drawFrags(world: World): void {
+  private drawFrags(world: RenderBundle): void {
     const { ctx } = this;
     for (const g of world.frags) {
       ctx.fillStyle = "#3a3a30";
@@ -463,7 +463,7 @@ export class Renderer {
     }
   }
 
-  private drawSmokes(world: World): void {
+  private drawSmokes(world: RenderBundle): void {
     const { ctx } = this;
     for (const s of world.smokes) {
       const alpha = Math.min(0.55, s.life / 4);
@@ -474,7 +474,7 @@ export class Renderer {
     }
   }
 
-  private drawPlane(world: World): void {
+  private drawPlane(world: RenderBundle): void {
     const { ctx } = this;
     const anyOnPlane = world.fighters.some((f) => f.state === "plane");
     if (!anyOnPlane && world.plane.pathT > 1.1) return;
@@ -507,7 +507,7 @@ export class Renderer {
     }
   }
 
-  private drawMinimap(world: World): void {
+  private drawMinimap(world: RenderBundle): void {
     const ctx = this.minimap;
     const size = 160;
     const scale = size / MAP_SIZE;
