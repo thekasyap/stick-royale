@@ -6,6 +6,8 @@ export interface GameInput {
   mouseDown: boolean;
   mouseRight: boolean;
   wheelDelta?: number;
+  /** PUBG-style auto pickup when near loot (mobile on by default) */
+  autoLoot?: boolean;
   pressed(key: string): boolean;
   down(key: string): boolean;
   moveVector(): { x: number; y: number };
@@ -21,6 +23,7 @@ export type InputSnapshot = {
   touchMoveX: number;
   touchMoveY: number;
   wheelDelta?: number;
+  autoLoot?: boolean;
 };
 
 export function snapshotInput(input: GameInput): InputSnapshot {
@@ -45,6 +48,18 @@ export function snapshotInput(input: GameInput): InputSnapshot {
     touchMoveX: mv.x,
     touchMoveY: mv.y,
     wheelDelta: input.wheelDelta ?? 0,
+    autoLoot: input.autoLoot ?? false,
+  };
+}
+
+/** Merge edge presses so queued ticks never drop Jump / Loot / Reload taps */
+export function mergeInputSnapshots(prev: InputSnapshot, next: InputSnapshot): InputSnapshot {
+  const just = new Set([...prev.justPressed, ...next.justPressed]);
+  return {
+    ...next,
+    justPressed: [...just],
+    wheelDelta: (prev.wheelDelta ?? 0) + (next.wheelDelta ?? 0),
+    autoLoot: next.autoLoot || prev.autoLoot,
   };
 }
 
@@ -57,6 +72,7 @@ export function inputFromSnapshot(s: InputSnapshot): GameInput {
     mouseDown: s.mouseDown,
     mouseRight: s.mouseRight,
     wheelDelta: s.wheelDelta ?? 0,
+    autoLoot: s.autoLoot ?? false,
     pressed: (k) => just.has(k.toLowerCase()),
     down: (k) => keys.has(k.toLowerCase()),
     moveVector: () => {

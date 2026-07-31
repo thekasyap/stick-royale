@@ -1,3 +1,12 @@
+/**
+ * Desktop: keyboard + mouse.
+ * Mobile (PUBG-style twin-stick):
+ *   Left stick  → move
+ *   Right stick → aim (relative to player / screen center)
+ *   FIRE        → shoot along aim
+ *   JUMP / R    → action buttons
+ *   autoLoot    → always on for touch
+ */
 export class Input {
   keys = new Set<string>();
   mouseX = 0;
@@ -5,21 +14,33 @@ export class Input {
   mouseDown = false;
   mouseRight = false;
   wheelDelta = 0;
+  autoLoot = false;
   private justPressed = new Set<string>();
   touchMove = { x: 0, y: 0 };
+  /** Aim stick −1..1; converted to mouse relative to screen center */
+  aimStick = { x: 1, y: 0 };
   touchFire = false;
-  touchInteract = false;
-  /** Visible joystick state for HUD overlay */
+  fireBtnActive = false;
+
   stickVisible = false;
   stickBase = { x: 0, y: 0 };
   stickKnob = { x: 0, y: 0 };
-  fireBtnActive = false;
+  aimVisible = false;
+  aimBase = { x: 0, y: 0 };
+  aimKnob = { x: 0, y: 0 };
+
   private stickOrigin: { x: number; y: number } | null = null;
   private stickPointerId: number | null = null;
+  private aimOrigin: { x: number; y: number } | null = null;
   private aimPointerId: number | null = null;
   private usingTouch = false;
+  private viewW = 1280;
+  private viewH = 720;
 
   constructor(private canvas: HTMLCanvasElement) {
+    this.mouseX = this.viewW * 0.5 + 180;
+    this.mouseY = this.viewH * 0.5;
+
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
       if (!this.keys.has(k)) this.justPressed.add(k);
@@ -51,109 +72,144 @@ export class Input {
     canvas.addEventListener("wheel", (e) => {
       this.wheelDelta += e.deltaY;
     }, { passive: true });
+  }
 
-    // Pointer Events unify mouse + touch; we gate touch zones for mobile layout
-    canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
-    canvas.addEventListener("pointermove", (e) => this.onPointerMove(e));
-    canvas.addEventListener("pointerup", (e) => this.onPointerUp(e));
-    canvas.addEventListener("pointercancel", (e) => this.onPointerUp(e));
+  setViewSize(w: number, h: number): void {
+    this.viewW = w;
+    this.viewH = h;
+    if (!this.usingTouch) return;
+    this.applyAimToMouse();
+  }
+
+  enableTouchMode(): void {
+    this.usingTouch = true;
+    this.autoLoot = true;
+    this.aimStick = { x: 1, y: 0 };
+    this.applyAimToMouse();
   }
 
   get isTouchLayout(): boolean {
-    return this.usingTouch || matchMedia("(pointer: coarse)").matches;
+    return this.usingTouch;
   }
 
-  private localPos(e: PointerEvent): { x: number; y: number } {
-    const rect = this.canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }
-
-  private onPointerDown(e: PointerEvent): void {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const isTouch = e.pointerType === "touch" || e.pointerType === "pen";
-    if (isTouch) this.usingTouch = true;
-
-    const { x, y } = this.localPos(e);
-    const rect = this.canvas.getBoundingClientRect();
-    const w = rect.width;
-
-    if (!isTouch) {
-      // Desktop mouse already handled via mouse listeners
-      return;
-    }
-
-    e.preventDefault();
-    try {
-      this.canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-
-    // Left half: virtual stick. Right half: aim (FIRE is the HTML button).
-    if (x < w * 0.45 && this.stickPointerId === null) {
+  /** Bind interactive stick pads (HTML overlays) — PUBG-style, not invisible canvas zones */
+  bindStickPad(el: HTMLElement): void {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.usingTouch = true;
+      this.autoLoot = true;
+      if (this.stickPointerId !== null) return;
+      try { el.setPointerCapture(e.pointerId); } catch { /* */ }
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
       this.stickPointerId = e.pointerId;
-      this.stickOrigin = { x, y };
-      this.stickBase = { x, y };
+      this.stickOrigin = { x: rect.width / 2, y: rect.height / 2 };
+      this.stickBase = { x: this.stickOrigin.x, y: this.stickOrigin.y };
       this.stickKnob = { x, y };
       this.stickVisible = true;
-      this.touchMove = { x: 0, y: 0 };
-      return;
-    }
-
-    if (x > w * 0.5 && this.aimPointerId === null) {
-      this.aimPointerId = e.pointerId;
-      this.mouseX = x;
-      this.mouseY = y;
-    }
-  }
-
-  private onPointerMove(e: PointerEvent): void {
-    const { x, y } = this.localPos(e);
-
-    if (e.pointerId === this.aimPointerId) {
-      this.mouseX = x;
-      this.mouseY = y;
+      this.updateStickVector(x, y, rect.width, rect.height);
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== this.stickPointerId || !this.stickOrigin) return;
       e.preventDefault();
-      return;
-    }
-
-    if (e.pointerId === this.stickPointerId && this.stickOrigin) {
-      const dx = x - this.stickOrigin.x;
-      const dy = y - this.stickOrigin.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const max = 56;
-      const mag = Math.min(1, len / max);
-      const kx = this.stickOrigin.x + (dx / len) * mag * max;
-      const ky = this.stickOrigin.y + (dy / len) * mag * max;
-      this.stickKnob = { x: kx, y: ky };
-      this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
-      e.preventDefault();
-    }
-  }
-
-  private onPointerUp(e: PointerEvent): void {
-    if (e.pointerId === this.stickPointerId) {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      this.stickKnob = { x, y };
+      this.updateStickVector(x, y, rect.width, rect.height);
+    });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== this.stickPointerId) return;
       this.stickPointerId = null;
       this.stickOrigin = null;
       this.touchMove = { x: 0, y: 0 };
       this.stickVisible = false;
-    }
-    if (e.pointerId === this.aimPointerId) {
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  bindAimPad(el: HTMLElement): void {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.usingTouch = true;
+      this.autoLoot = true;
+      if (this.aimPointerId !== null) return;
+      try { el.setPointerCapture(e.pointerId); } catch { /* */ }
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      this.aimPointerId = e.pointerId;
+      this.aimOrigin = { x: rect.width / 2, y: rect.height / 2 };
+      this.aimBase = { x: this.aimOrigin.x, y: this.aimOrigin.y };
+      this.aimKnob = { x, y };
+      this.aimVisible = true;
+      this.updateAimVector(x, y, rect.width, rect.height);
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== this.aimPointerId || !this.aimOrigin) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      this.aimKnob = { x, y };
+      this.updateAimVector(x, y, rect.width, rect.height);
+    });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== this.aimPointerId) return;
       this.aimPointerId = null;
-    }
-    this.touchInteract = false;
+      this.aimOrigin = null;
+      this.aimVisible = false;
+      // Keep last aimStick so fire direction stays where you pointed
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  private updateStickVector(x: number, y: number, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    const dx = x - cx;
+    const dy = y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const max = Math.min(w, h) * 0.38;
+    const mag = Math.min(1, len / max);
+    this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
+  }
+
+  private updateAimVector(x: number, y: number, w: number, h: number): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    const dx = x - cx;
+    const dy = y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const max = Math.min(w, h) * 0.38;
+    const mag = Math.min(1, Math.max(0.35, len / max)); // deadzone floor so aim never zeros
+    this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
+    this.applyAimToMouse();
+  }
+
+  /** Map twin-stick aim → screen coords around player (camera center) */
+  private applyAimToMouse(): void {
+    const reach = Math.min(this.viewW, this.viewH) * 0.35;
+    this.mouseX = this.viewW / 2 + this.aimStick.x * reach;
+    this.mouseY = this.viewH / 2 + this.aimStick.y * reach;
   }
 
   endFrame(): void {
     this.justPressed.clear();
     this.wheelDelta = 0;
-    this.touchInteract = false;
   }
 
-  /** Mobile HUD buttons */
+  /** Always edge on tap — even if key was stuck down from a missed release */
   injectPress(key: string): void {
     const k = key.toLowerCase();
-    if (!this.keys.has(k)) this.justPressed.add(k);
+    this.justPressed.add(k);
     this.keys.add(k);
   }
 

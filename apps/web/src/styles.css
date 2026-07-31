@@ -464,147 +464,218 @@ body,
 
 .mobile-tip {
   position: absolute;
-  top: 22%;
+  top: 20%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
   pointer-events: none;
   padding: 10px 16px;
-  background: rgba(18, 24, 16, 0.88);
+  background: rgba(18, 24, 16, 0.9);
   border: 1px solid rgba(212, 160, 74, 0.45);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   letter-spacing: 0.04em;
   color: var(--sand);
   text-align: center;
-  max-width: min(340px, 88vw);
+  max-width: min(360px, 90vw);
   animation: fadeIn 0.35s ease;
 }
 
+/* —— PUBG-style twin-stick touch UI —— */
 .touch-ui {
   display: none;
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 5;
   pointer-events: none;
 }
 
-.stick-zone {
+.touch-left,
+.touch-right {
   position: absolute;
-  left: max(12px, env(safe-area-inset-left));
-  bottom: max(24px, env(safe-area-inset-bottom));
-  width: 140px;
-  height: 140px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   pointer-events: none;
 }
 
-.stick-base {
-  position: absolute;
-  left: 28px;
-  top: 28px;
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  border: 2px solid rgba(240, 232, 216, 0.28);
-  background: rgba(18, 24, 16, 0.35);
+.touch-left {
+  left: max(10px, env(safe-area-inset-left));
+  align-items: flex-start;
 }
 
-.stick-base.active {
-  border-color: rgba(212, 160, 74, 0.55);
-  background: rgba(18, 24, 16, 0.5);
+.touch-right {
+  right: max(10px, env(safe-area-inset-right));
+  align-items: flex-end;
 }
 
-.stick-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 36px;
-  height: 36px;
-  margin: -18px 0 0 -18px;
-  border-radius: 50%;
-  background: rgba(212, 160, 74, 0.55);
-  border: 2px solid rgba(240, 232, 216, 0.55);
-  transform: translate(0, 0);
-  will-change: transform;
+.heal-rail,
+.action-rail {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
 }
 
-.fire-btn {
-  position: absolute;
-  right: max(18px, env(safe-area-inset-right));
-  bottom: max(28px, calc(env(safe-area-inset-bottom) + 12px));
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  border: 2px solid rgba(196, 92, 42, 0.7);
-  background: rgba(196, 92, 42, 0.42);
-  color: #f0e8d8;
-  font-family: var(--font-brand);
-  font-size: 1.15rem;
-  letter-spacing: 0.08em;
+.heal-rail {
+  flex-direction: column;
+}
+
+.action-rail {
+  align-items: center;
+}
+
+.stick-pad {
+  position: relative;
+  width: 148px;
+  height: 148px;
   pointer-events: auto;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
+.stick-pad .stick-base {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border-radius: 50%;
+  border: 2px solid rgba(240, 232, 216, 0.32);
+  background: rgba(12, 16, 10, 0.42);
+}
+
+.stick-pad .stick-base.active {
+  border-color: rgba(212, 160, 74, 0.65);
+  background: rgba(18, 24, 16, 0.58);
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(212, 160, 74, 0.55);
+  border: 2px solid rgba(240, 232, 216, 0.65);
+  transform: translate(0, 0);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.aim-pad .stick-knob {
+  background: rgba(196, 92, 42, 0.55);
+  border-color: rgba(240, 232, 216, 0.7);
+}
+
+.pad-label {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  font-family: var(--font-brand);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  color: rgba(240, 232, 216, 0.55);
+  pointer-events: none;
+}
+
+.aim-cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.fire-btn {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: 3px solid rgba(196, 92, 42, 0.85);
+  background: radial-gradient(circle at 35% 30%, rgba(224, 120, 70, 0.85), rgba(140, 40, 24, 0.75));
+  color: #f0e8d8;
+  font-family: var(--font-brand);
+  font-size: 1.25rem;
+  letter-spacing: 0.1em;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
 .fire-btn:active,
 .fire-btn.active {
-  background: rgba(196, 92, 42, 0.72);
-  transform: scale(0.96);
+  transform: scale(0.94);
+  filter: brightness(1.15);
 }
 
-.mobile-controls {
-  display: none;
-  position: absolute;
-  right: max(12px, env(safe-area-inset-right));
-  bottom: max(124px, calc(env(safe-area-inset-bottom) + 112px));
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  z-index: 5;
-  pointer-events: auto;
-}
-
-.mobile-controls .mbtn-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 220px;
-}
-
-.mobile-controls .mbtn {
-  min-width: 52px;
+.mbtn {
+  min-width: 48px;
   min-height: 44px;
   padding: 0 10px;
   border: 1px solid rgba(212, 160, 74, 0.45);
   background: rgba(20, 24, 18, 0.78);
   color: #f0e8d8;
   font-family: var(--font-ui);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  border-radius: 8px;
+  border-radius: 10px;
   touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
+  pointer-events: auto;
 }
 
-.mobile-controls .mbtn.heal {
-  min-width: 48px;
-  min-height: 40px;
-  font-size: 0.68rem;
-  border-color: rgba(61, 158, 90, 0.45);
+.mbtn.round {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  padding: 0;
+  border-radius: 50%;
+  font-family: var(--font-brand);
+  font-size: 0.95rem;
 }
 
-.mobile-controls .mbtn:active,
-.mobile-controls .mbtn.active {
-  background: rgba(212, 160, 74, 0.35);
+.mbtn.jump {
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  border-radius: 50%;
+  font-family: var(--font-brand);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  border-color: rgba(90, 160, 220, 0.65);
+  background: rgba(40, 70, 100, 0.72);
 }
 
-body.touch-mode .touch-ui,
-body.touch-mode .mobile-controls {
-  display: flex;
+.mbtn.heal {
+  min-width: 54px;
+  font-size: 0.65rem;
+  border-color: rgba(61, 158, 90, 0.5);
+}
+
+.mbtn:active,
+.mbtn.active {
+  background: rgba(212, 160, 74, 0.4);
+}
+
+.auto-loot-pill {
+  pointer-events: none;
+  align-self: flex-end;
+  padding: 4px 10px;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--hp);
+  background: rgba(18, 24, 16, 0.7);
+  border: 1px solid rgba(61, 158, 90, 0.45);
+  border-radius: 999px;
 }
 
 body.touch-mode .touch-ui {
@@ -616,13 +687,20 @@ body.touch-mode .heal-block {
 }
 
 body.touch-mode .hud-bottom {
-  bottom: max(18px, env(safe-area-inset-bottom));
-  scale: 0.88;
-  gap: 10px;
+  bottom: max(170px, calc(env(safe-area-inset-bottom) + 158px));
+  left: 50%;
+  transform: translateX(-50%);
+  scale: 0.86;
+  gap: 8px;
 }
 
 body.touch-mode .prompt {
-  bottom: max(200px, calc(env(safe-area-inset-bottom) + 180px));
+  bottom: max(188px, calc(env(safe-area-inset-bottom) + 172px));
+}
+
+body.touch-mode #minimap {
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
 }
 
 body.playing {
@@ -635,14 +713,26 @@ body.playing {
 
 @media (max-width: 640px) {
   .brand { font-size: 3.8rem; }
-  #minimap { width: 100px; height: 100px; }
+  #minimap { width: 96px; height: 96px; }
   .hud-bottom { gap: 10px; scale: 0.88; }
   .row { grid-template-columns: 1fr; }
   .lobby-content { padding: 1.25rem 1rem max(2rem, env(safe-area-inset-bottom)); }
   .cta { width: 100%; }
+  .stick-pad { width: 132px; height: 132px; }
+  .stick-pad .stick-base { width: 100px; height: 100px; margin: -50px 0 0 -50px; }
+  .fire-btn { width: 84px; height: 84px; font-size: 1.1rem; }
 }
 
 @media (pointer: coarse), (max-width: 900px) and (hover: none) {
-  body.touch-capable .touch-ui { display: block; }
-  body.touch-capable .mobile-controls { display: flex; }
+  body.touch-capable.playing .touch-ui,
+  body.touch-capable.touch-mode .touch-ui {
+    display: block;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .stick-pad { width: 118px; height: 118px; }
+  .fire-btn { width: 76px; height: 76px; }
+  .heal-rail { flex-direction: row; }
+  body.touch-mode .hud-bottom { bottom: max(130px, calc(env(safe-area-inset-bottom) + 118px)); }
 }

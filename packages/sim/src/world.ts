@@ -6,6 +6,8 @@ import {
   PLAYER_ADS_SPEED,
   PLAYER_SPEED,
   REVIVE_RANGE,
+  STARTER_MELEE,
+  STARTER_WEAPON,
   WEAPONS,
   type BotDifficulty,
   type GameMode,
@@ -439,7 +441,11 @@ export class World {
     if (p.state === "plane") {
       p.x = this.plane.x;
       p.y = this.plane.y;
-      if (input.pressed(" ") || input.pressed("f") || input.pressed("e")) {
+      // Accept pressed OR held jump — mobile taps must not be lost to worker queue timing
+      if (
+        input.pressed(" ") || input.down(" ") ||
+        input.pressed("f") || input.pressed("e")
+      ) {
         p.state = "parachute";
         p.chuteAlt = 1;
         p.dropTarget = {
@@ -466,7 +472,8 @@ export class World {
       p.y += Math.sin(angleTo(p, { x: worldMx, y: worldMy })) * 55 * dt;
       p.aim = angleTo(p, { x: worldMx, y: worldMy });
       p.chuteAlt = Math.max(0, (p.chuteAlt ?? 1) - dt * 0.22);
-      this.prompt = `Altitude ${Math.ceil((p.chuteAlt ?? 0) * 100)}% · SPACE cut chute`;
+      this.prompt = `Altitude ${Math.ceil((p.chuteAlt ?? 0) * 100)}% · JUMP cut chute`;
+      // Edge only — holding Jump from the plane drop must not instantly cut chute
       if (input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0) {
         p.state = "alive";
         p.invuln = 0.5;
@@ -546,11 +553,18 @@ export class World {
 
     const near = this.nearestLoot(p.x, p.y, 48);
     const nearCare = this.carePackages.find((c) => c.landed && dist(p, c) < 52);
+    const wantLoot = input.pressed("f") || input.pressed("e");
+    const auto = !!input.autoLoot;
+
     if (nearCare && !downedMate) {
-      this.prompt = "F — Care Package";
-      if (input.pressed("f") || input.pressed("e")) {
+      this.prompt = auto ? "AUTO · Care Package" : "F — Care Package";
+      if (wantLoot || auto) {
         const left: typeof nearCare.items = [];
         for (const item of nearCare.items) {
+          if (auto && !wantLoot && !this.shouldAutoTake(p, item)) {
+            left.push(item);
+            continue;
+          }
           const res = tryPickup(p, item);
           if (res.ok) {
             this.sfx.loots += 1;
@@ -574,10 +588,16 @@ export class World {
       }
       const who = near.fromCrate && near.ownerName ? `${near.ownerName}'s crate · ` : "";
       const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
-      this.prompt = `F — ${who}${labels}${compare}`;
-      if (input.pressed("f") || input.pressed("e")) {
+      this.prompt = auto
+        ? `AUTO · ${who}${labels}${compare}`
+        : `F — ${who}${labels}${compare}`;
+      if (wantLoot) {
         const before = near.items.length;
         this.pickupLoot(p, near);
+        if (near.items.length < before) this.sfx.loots += 1;
+      } else if (auto) {
+        const before = near.items.length;
+        this.pickupLootAuto(p, near);
         if (near.items.length < before) this.sfx.loots += 1;
       }
     }
@@ -633,6 +653,39 @@ export class World {
       const res = tryPickup(f, item);
       if (!res.ok) remaining.push(item);
       else if (res.dropped) this.dropItemAt(f.x + (this.rng() - 0.5) * 16, f.y + (this.rng() - 0.5) * 16, res.dropped);
+    }
+    pile.items = remaining;
+  }
+
+  /** PUBG-style: auto grab ammo/heals/armor; weapons only into empty slots (no A↔B thrash) */
+  private shouldAutoTake(f: Fighter, item: LootKind): boolean {
+    if (item.type === "ammo" || item.type === "heal" || item.type === "attachment" || item.type === "throwable") {
+      return true;
+    }
+    if (item.type === "armor") return true;
+    if (item.type === "weapon") {
+      const def = WEAPONS[item.weaponId];
+      if (!def) return false;
+      if (def.slot === "primary") return !f.primary;
+      if (def.slot === "secondary") return !f.secondary || f.secondary.weaponId === STARTER_WEAPON;
+      if (def.slot === "melee") return f.melee.weaponId === STARTER_MELEE;
+      if (def.slot === "throwable") return true;
+    }
+    return false;
+  }
+
+  private pickupLootAuto(f: Fighter, pile: LootPile): void {
+    const remaining: LootKind[] = [];
+    for (const item of pile.items) {
+      if (!this.shouldAutoTake(f, item)) {
+        remaining.push(item);
+        continue;
+      }
+      const res = tryPickup(f, item);
+      if (!res.ok) remaining.push(item);
+      else if (res.dropped) {
+        this.dropItemAt(f.x + (this.rng() - 0.5) * 16, f.y + (this.rng() - 0.5) * 16, res.dropped);
+      }
     }
     pile.items = remaining;
   }

@@ -65,14 +65,15 @@ class GameApp {
   private damageFlash = 0;
   private stickBaseEl = $("stick-base");
   private stickKnobEl = $("stick-knob");
+  private aimBaseEl = $("aim-base");
+  private aimKnobEl = $("aim-knob");
   private fireBtn = $("fire-btn");
 
   constructor() {
     ensureGuestId();
     this.detectTouch();
     this.bindLobby();
-    this.bindMobileControls();
-    this.bindFireButton();
+    this.bindTouchControls();
     this.bindVisibility();
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -84,9 +85,10 @@ class GameApp {
     if (isTouchCapable()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
+      this.input.enableTouchMode();
       const hint = $("controls-hint");
       hint.textContent =
-        "Left stick move · Right drag aim · FIRE to shoot · Loot / Reload / Heal buttons";
+        "Left MOVE stick · Right AIM stick · FIRE to shoot · JUMP · Auto-loot picks ammo/heals/armor";
     }
   }
 
@@ -102,8 +104,13 @@ class GameApp {
     });
   }
 
-  private bindFireButton(): void {
-    const down = (e: Event) => {
+  private bindTouchControls(): void {
+    const movePad = $("move-pad");
+    const aimPad = $("aim-pad");
+    this.input.bindStickPad(movePad);
+    this.input.bindAimPad(aimPad);
+
+    const downFire = (e: Event) => {
       e.preventDefault();
       this.audio.unlock();
       this.input.mouseDown = true;
@@ -111,33 +118,37 @@ class GameApp {
       this.input.fireBtnActive = true;
       this.fireBtn.classList.add("active");
     };
-    const up = () => {
+    const upFire = () => {
       this.input.mouseDown = false;
       this.input.touchFire = false;
       this.input.fireBtnActive = false;
       this.fireBtn.classList.remove("active");
     };
-    this.fireBtn.addEventListener("pointerdown", down);
-    this.fireBtn.addEventListener("pointerup", up);
-    this.fireBtn.addEventListener("pointercancel", up);
-    this.fireBtn.addEventListener("pointerleave", up);
-  }
+    this.fireBtn.addEventListener("pointerdown", downFire);
+    this.fireBtn.addEventListener("pointerup", upFire);
+    this.fireBtn.addEventListener("pointercancel", upFire);
+    this.fireBtn.addEventListener("lostpointercapture", upFire);
 
-  private bindMobileControls(): void {
-    const root = $("mobile-controls");
+    const root = $("touch-ui");
     root.querySelectorAll("[data-key]").forEach((btn) => {
       const key = (btn as HTMLElement).dataset.key!;
       const press = (e: Event) => {
         e.preventDefault();
+        e.stopPropagation();
         this.audio.unlock();
         this.input.injectPress(key);
+        (btn as HTMLElement).classList.add("active");
       };
-      const release = () => this.input.injectRelease(key);
+      const release = () => {
+        this.input.injectRelease(key);
+        (btn as HTMLElement).classList.remove("active");
+      };
       btn.addEventListener("pointerdown", press);
       btn.addEventListener("pointerup", release);
       btn.addEventListener("pointercancel", release);
-      btn.addEventListener("pointerleave", release);
+      btn.addEventListener("lostpointercapture", release);
     });
+
     const ads = root.querySelector("[data-ads]");
     if (ads) {
       const down = (e: Event) => {
@@ -153,7 +164,7 @@ class GameApp {
       ads.addEventListener("pointerdown", down);
       ads.addEventListener("pointerup", up);
       ads.addEventListener("pointercancel", up);
-      ads.addEventListener("pointerleave", up);
+      ads.addEventListener("lostpointercapture", up);
     }
   }
 
@@ -195,6 +206,7 @@ class GameApp {
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.input.setViewSize(w, h);
   }
 
   private startMatch(config: MatchConfig): void {
@@ -204,6 +216,7 @@ class GameApp {
     document.body.classList.add("playing");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
+      this.input.enableTouchMode();
       this.maybeShowMobileTip();
     }
     this.lastSfx = {
@@ -277,28 +290,45 @@ class GameApp {
 
   private syncTouchOverlay(): void {
     if (!this.touchMode) return;
-    const max = 40;
-    if (this.input.stickVisible) {
-      this.stickBaseEl.classList.add("active");
-      const dx = this.input.stickKnob.x - this.input.stickBase.x;
-      const dy = this.input.stickKnob.y - this.input.stickBase.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const mag = Math.min(max, len);
-      const ox = (dx / len) * mag;
-      const oy = (dy / len) * mag;
-      this.stickKnobEl.style.transform = `translate(${ox}px, ${oy}px)`;
-      // Move base toward finger origin when dynamic stick is active
-      const zone = $("stick-zone");
-      const rect = zone.getBoundingClientRect();
-      const localX = this.input.stickBase.x - rect.left;
-      const localY = this.input.stickBase.y - rect.top;
-      this.stickBaseEl.style.left = `${Math.max(0, Math.min(rect.width - 84, localX - 42))}px`;
-      this.stickBaseEl.style.top = `${Math.max(0, Math.min(rect.height - 84, localY - 42))}px`;
-    } else {
-      this.stickBaseEl.classList.remove("active");
-      this.stickKnobEl.style.transform = "translate(0, 0)";
-      this.stickBaseEl.style.left = "28px";
-      this.stickBaseEl.style.top = "28px";
+    const max = 44;
+    const syncPad = (
+      visible: boolean,
+      baseEl: HTMLElement,
+      knobEl: HTMLElement,
+      base: { x: number; y: number },
+      knob: { x: number; y: number },
+    ) => {
+      if (visible) {
+        baseEl.classList.add("active");
+        const dx = knob.x - base.x;
+        const dy = knob.y - base.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const mag = Math.min(max, len);
+        knobEl.style.transform = `translate(${(dx / len) * mag}px, ${(dy / len) * mag}px)`;
+      } else {
+        baseEl.classList.remove("active");
+        knobEl.style.transform = "translate(0, 0)";
+      }
+    };
+    syncPad(
+      this.input.stickVisible,
+      this.stickBaseEl,
+      this.stickKnobEl,
+      this.input.stickBase,
+      this.input.stickKnob,
+    );
+    syncPad(
+      this.input.aimVisible,
+      this.aimBaseEl,
+      this.aimKnobEl,
+      this.input.aimBase,
+      this.input.aimKnob,
+    );
+    // When aim pad idle, still show last aim direction on knob
+    if (!this.input.aimVisible) {
+      const reach = 36;
+      this.aimKnobEl.style.transform =
+        `translate(${this.input.aimStick.x * reach}px, ${this.input.aimStick.y * reach}px)`;
     }
     this.fireBtn.classList.toggle("active", this.input.fireBtnActive);
   }
@@ -418,12 +448,12 @@ class GameApp {
     const drop = $("drop-banner");
     if (p.state === "plane") {
       drop.classList.remove("hidden");
-      drop.textContent = this.touchMode ? "JUMP · TAP JUMP / LOOT" : "JUMP · SPACE / F";
+      drop.textContent = this.touchMode ? "TAP JUMP TO DROP" : "JUMP · SPACE / F";
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
       const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
       drop.textContent = this.touchMode
-        ? `CUT CHUTE · JUMP  ·  ALT ${alt}%`
+        ? `TAP JUMP TO CUT  ·  ALT ${alt}%`
         : `CUT CHUTE · SPACE  ·  ALT ${alt}%`;
     } else {
       drop.classList.add("hidden");

@@ -1,5 +1,6 @@
 import {
   MatchSim,
+  mergeInputSnapshots,
   snapshotInput,
   type InputSnapshot,
   type MatchConfig,
@@ -37,7 +38,6 @@ export class MatchHost {
       this.worker.onmessage = (ev) => {
         const msg = ev.data as { type: string; bundle?: RenderBundle; error?: string };
         if (msg.type === "error") {
-          // Worker recovered from a tick failure — clear pending so we don't freeze
           console.error("[MatchHost] worker error:", msg.error);
           this.clearPending();
           this.flushQueue();
@@ -51,7 +51,6 @@ export class MatchHost {
         }
       };
       this.worker.onerror = (err) => {
-        // Uncaught worker crash: without this, pending stays true forever (frozen canvas)
         console.error("[MatchHost] worker crashed:", err.message);
         this.clearPending();
         this.queued = null;
@@ -61,7 +60,6 @@ export class MatchHost {
         this.clearPending();
         this.flushQueue();
       };
-      // Mark pending until ready so early ticks queue instead of racing init
       this.markPending();
       this.worker.postMessage({ type: "init", config });
     } else {
@@ -89,7 +87,6 @@ export class MatchHost {
     this.worker.postMessage({ type: "tick", ...q });
   }
 
-  /** If a tick never returns, clear pending so gameplay can continue */
   private recoverIfStalled(): void {
     if (!this.pending || !this.worker || this.pendingSince <= 0) return;
     if (performance.now() - this.pendingSince < PENDING_WATCHDOG_MS) return;
@@ -109,10 +106,15 @@ export class MatchHost {
     this.recoverIfStalled();
     const snap = snapshotInput(input);
     if (this.pending) {
-      // Overwrite queue with latest input; accumulate dt so sim doesn't starve
-      if (this.queued) this.queued.dt = Math.min(0.08, this.queued.dt + dt);
-      else this.queued = { dt, input: snap, viewW, viewH };
-      if (this.queued) this.queued.input = snap;
+      if (this.queued) {
+        this.queued.dt = Math.min(0.08, this.queued.dt + dt);
+        // Merge justPressed so Jump / Loot / Reload taps survive pending ticks
+        this.queued.input = mergeInputSnapshots(this.queued.input, snap);
+        this.queued.viewW = viewW;
+        this.queued.viewH = viewH;
+      } else {
+        this.queued = { dt, input: snap, viewW, viewH };
+      }
       return;
     }
     this.markPending();

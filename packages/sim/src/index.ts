@@ -6,6 +6,7 @@ export {
   type InputSnapshot,
   snapshotInput,
   inputFromSnapshot,
+  mergeInputSnapshots,
 } from "./game-input.js";
 export { createFighter, activeWeapon, type Fighter } from "./fighter.js";
 export type { IslandMap, LootPile } from "./mapgen.js";
