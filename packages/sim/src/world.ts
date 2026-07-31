@@ -658,10 +658,11 @@ export class World {
       return;
     }
 
+    // Count anyone still in the match — including plane/parachute.
+    // Filtering only "alive"/"downed" made livingTeams empty at drop start
+    // (everyone is "plane"), so Solo won instantly with Chicken Dinner.
     const livingTeams = new Set(
-      this.fighters
-        .filter((f) => f.state === "alive" || f.state === "downed")
-        .map((f) => f.teamId),
+      this.fighters.filter((f) => f.state !== "dead").map((f) => f.teamId),
     );
     if (livingTeams.size <= 1 && !playerEliminated) {
       this.matchOver = true;
