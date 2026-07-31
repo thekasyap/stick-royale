@@ -1,10 +1,13 @@
-import type { BotDifficulty, GameMode } from "@stick-royale/shared";
+import type { BotDifficulty, GameMode, PartySize } from "@stick-royale/shared";
+import { GameAudio } from "./game/audio";
 import { Input } from "./game/input";
 import { Renderer } from "./game/renderer";
 import { World } from "./game/world";
+import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
+const AUDIO_KEY = "stick_royale_audio";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -26,6 +29,7 @@ class GameApp {
   private miniCtx = this.minimapCanvas.getContext("2d")!;
   private input = new Input(this.canvas);
   private renderer = new Renderer(this.ctx, this.miniCtx);
+  private audio = new GameAudio();
   private world: World | null = null;
   private raf = 0;
   private last = 0;
@@ -37,18 +41,37 @@ class GameApp {
     this.resize();
     window.addEventListener("resize", () => this.resize());
     $("play-again").addEventListener("click", () => this.backToLobby());
+    const audioOn = localStorage.getItem(AUDIO_KEY) !== "0";
+    this.audio.setEnabled(audioOn);
   }
 
   private bindLobby(): void {
     const nick = $("nickname") as HTMLInputElement;
     nick.value = localStorage.getItem(NICK_KEY) || randomNick();
-    $("lobby-form").addEventListener("submit", (e) => {
+    const hint = $("party-hint");
+    if (partyHostAvailable()) {
+      hint.textContent = "Online party codes available — offline play works instantly.";
+    } else {
+      hint.textContent = "Playing offline with bot-fill (48 players). Deploy Cloudflare for online parties.";
+    }
+
+    $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const nickname = nick.value.trim().slice(0, 16) || "StickHero";
       localStorage.setItem(NICK_KEY, nickname);
       const mode = ($("mode") as HTMLSelectElement).value as GameMode;
+      const partySize = ($("party-size") as HTMLSelectElement).value as PartySize;
       const difficulty = ($("difficulty") as HTMLSelectElement).value as BotDifficulty;
-      this.startMatch({ nickname, mode, difficulty });
+      const partyCode = ($("party-code") as HTMLInputElement).value.trim().toUpperCase();
+
+      if (!partyCode && partyHostAvailable()) {
+        const created = await createParty(nickname);
+        if (created) {
+          ($("party-code") as HTMLInputElement).value = created.code;
+        }
+      }
+
+      this.startMatch({ nickname, mode, partySize, difficulty });
     });
   }
 
@@ -63,11 +86,16 @@ class GameApp {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  private startMatch(config: { nickname: string; mode: GameMode; difficulty: BotDifficulty }): void {
+  private startMatch(config: {
+    nickname: string;
+    mode: GameMode;
+    partySize: PartySize;
+    difficulty: BotDifficulty;
+  }): void {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
-    this.world = new World(config);
+    this.world = new World(config, this.audio);
     this.running = true;
     this.last = performance.now();
     cancelAnimationFrame(this.raf);
@@ -122,13 +150,23 @@ class GameApp {
     $("prompt").textContent = world.prompt;
 
     const drop = $("drop-banner");
-    if (p.state === "plane") drop.classList.remove("hidden");
-    else drop.classList.add("hidden");
+    if (p.state === "plane") {
+      drop.classList.remove("hidden");
+      drop.textContent = "JUMP · SPACE / F";
+    } else if (p.state === "parachute") {
+      drop.classList.remove("hidden");
+      drop.textContent = "DEPLOY · SPACE";
+    } else {
+      drop.classList.add("hidden");
+    }
 
     const feed = $("kill-feed");
     feed.innerHTML = world.killFeed
       .slice(0, 5)
-      .map((k) => `<div class="entry">${escapeHtml(k.killer)} [${escapeHtml(k.weapon)}] ${escapeHtml(k.victim)}</div>`)
+      .map((k) => {
+        const tag = k.knocked ? " knocked " : " ";
+        return `<div class="entry">${escapeHtml(k.killer)} [${escapeHtml(k.weapon)}]${tag}${escapeHtml(k.victim)}</div>`;
+      })
       .join("");
   }
 
@@ -136,12 +174,13 @@ class GameApp {
     const r = world.result!;
     $("hud").classList.add("hidden");
     $("results").classList.remove("hidden");
-    $("results-title").textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+    const title = $("results-title");
+    title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+    title.classList.toggle("winner", r.winner);
     $("results-place").textContent = `#${r.placement} / 48`;
     $("stat-kills").textContent = String(r.kills);
     $("stat-damage").textContent = String(Math.round(r.damage));
     $("stat-alive").textContent = `${Math.floor(r.aliveTime)}s`;
-    // keep last frame visible — freeze loop
     this.running = false;
   }
 }

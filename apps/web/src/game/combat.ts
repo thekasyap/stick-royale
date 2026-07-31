@@ -64,7 +64,7 @@ export function tryFire(
   smokes: SmokeCloud[],
   rng: () => number,
 ): boolean {
-  if (f.state !== "alive" || f.reloadTimer > 0 || f.healTimer > 0) return false;
+  if (f.state !== "alive" || f.reloadTimer > 0 || f.healTimer > 0 || f.vehicleId) return false;
   if (f.fireCooldown > 0) return false;
 
   // throwable slot
@@ -183,6 +183,7 @@ export function updateBullets(
   cover: Cover[],
   dt: number,
   onHit: (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => void,
+  allowKnock = false,
 ): void {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i]!;
@@ -222,22 +223,24 @@ export function updateBullets(
     const owner = fighters.find((f) => f.id === b.ownerId);
     for (const victim of fighters) {
       if (victim.id === b.ownerId) continue;
-      if (victim.state !== "alive") continue;
-      if (owner && victim.teamId === owner.teamId && owner.teamId !== 0) continue;
-      // same team check: player team 0, bots each unique or all enemies
-      if (circleRay(ox, oy, b.x, b.y, victim.x, victim.y, victim.radius)) {
-        const headshot = Math.abs(b.y - (victim.y - victim.radius * 0.55)) < victim.radius * 0.45 &&
-          chance(() => Math.random(), 0.25);
-        const raw = headshot ? b.damage * b.headMul : b.damage;
-        const dealt = applyDamage(victim, raw, headshot);
-        if (owner && dealt > 0) {
-          owner.damageDealt += dealt;
-          const gun = activeWeapon(owner);
-          onHit(owner, victim, dealt, gun?.weaponId ?? "gun");
-        }
-        bullets.splice(i, 1);
-        break;
+      if (victim.state !== "alive" && victim.state !== "downed") continue;
+      if (owner && victim.teamId === owner.teamId && owner.id !== victim.id) continue;
+      if (!circleRay(ox, oy, b.x, b.y, victim.x, victim.y, victim.radius)) continue;
+      const headshot =
+        Math.abs(b.y - (victim.y - victim.radius * 0.55)) < victim.radius * 0.45 &&
+        chance(() => Math.random(), 0.25);
+      const raw = headshot ? b.damage * b.headMul : b.damage;
+      const dealt = applyDamage(victim, raw, headshot, {
+        allowKnock,
+        teammates: fighters,
+      });
+      if (owner && dealt > 0) {
+        owner.damageDealt += dealt;
+        const gun = activeWeapon(owner);
+        onHit(owner, victim, dealt, gun?.weaponId ?? "gun");
       }
+      bullets.splice(i, 1);
+      break;
     }
   }
 }
@@ -254,19 +257,20 @@ export function updateMelees(
   fighters: Fighter[],
   dt: number,
   onHit: (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => void,
+  allowKnock = false,
 ): void {
   for (let i = melees.length - 1; i >= 0; i--) {
     const m = melees[i]!;
     m.life -= dt;
     const owner = fighters.find((f) => f.id === m.ownerId);
     for (const victim of fighters) {
-      if (victim.id === m.ownerId || victim.state !== "alive") continue;
+      if (victim.id === m.ownerId || (victim.state !== "alive" && victim.state !== "downed")) continue;
       if (m.hit.has(victim.id)) continue;
       const hx = m.x + Math.cos(m.aim) * (m.range * 0.6);
       const hy = m.y + Math.sin(m.aim) * (m.range * 0.6);
       if (dist({ x: hx, y: hy }, victim) < victim.radius + 16) {
         m.hit.add(victim.id);
-        const dealt = applyDamage(victim, m.damage, false);
+        const dealt = applyDamage(victim, m.damage, false, { allowKnock, teammates: fighters });
         if (owner && dealt > 0) {
           owner.damageDealt += dealt;
           onHit(owner, victim, dealt, "pan");
@@ -282,6 +286,7 @@ export function updateFrags(
   fighters: Fighter[],
   dt: number,
   onHit: (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => void,
+  allowKnock = false,
 ): void {
   for (let i = frags.length - 1; i >= 0; i--) {
     const g = frags[i]!;
@@ -298,7 +303,7 @@ export function updateFrags(
       if (d < 110) {
         const falloff = 1 - d / 110;
         const raw = 100 * falloff;
-        const dealt = applyDamage(victim, raw, false);
+        const dealt = applyDamage(victim, raw, false, { allowKnock, teammates: fighters });
         if (owner && dealt > 0 && victim.id !== owner.id) {
           owner.damageDealt += dealt;
           onHit(owner, victim, dealt, "frag");

@@ -50,11 +50,15 @@ export class Renderer {
 
     this.drawTerrain(world.map);
     this.drawZone(world);
+    this.drawRedZone(world);
     this.drawLoot(world.map);
+    this.drawCarePackages(world);
+    this.drawVehicles(world);
     this.drawSmokes(world);
     this.drawFighters(world);
     this.drawBullets(world);
     this.drawFrags(world);
+    this.drawPings(world);
     this.drawPlane(world);
     this.drawHitMarkers(world);
 
@@ -186,7 +190,6 @@ export class Renderer {
   private drawZone(world: World): void {
     const { ctx } = this;
     const z = world.zone;
-    // darken outside blue
     ctx.save();
     ctx.fillStyle = "rgba(40, 60, 140, 0.28)";
     ctx.beginPath();
@@ -210,6 +213,82 @@ export class Renderer {
     ctx.restore();
   }
 
+  private drawRedZone(world: World): void {
+    const rz = world.redZone;
+    if (!rz) return;
+    const { ctx } = this;
+    const alpha = rz.active ? 0.35 : 0.18;
+    ctx.fillStyle = `rgba(180, 50, 40, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(rz.x, rz.y, rz.r, 0, Math.PI * 2);
+    ctx.fill();
+    if (!rz.active) {
+      ctx.strokeStyle = "rgba(220, 80, 60, 0.7)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  private drawCarePackages(world: World): void {
+    const { ctx } = this;
+    for (const cp of world.carePackages) {
+      const y = cp.landed ? cp.y : cp.y - cp.height;
+      ctx.fillStyle = "#2a4a6a";
+      ctx.fillRect(cp.x - 14, y - 10, 28, 20);
+      ctx.fillStyle = "#d4a04a";
+      ctx.fillRect(cp.x - 10, y - 14, 20, 6);
+      if (!cp.landed) {
+        ctx.strokeStyle = "rgba(240,232,216,0.4)";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cp.x, y);
+        ctx.lineTo(cp.x, cp.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  private drawVehicles(world: World): void {
+    const { ctx } = this;
+    for (const v of world.vehicles) {
+      ctx.save();
+      ctx.translate(v.x, v.y);
+      ctx.rotate(v.angle);
+      if (v.kind === "buggy") {
+        ctx.fillStyle = "#8a5030";
+        ctx.fillRect(-16, -10, 32, 20);
+        ctx.fillStyle = "#222";
+        ctx.beginPath();
+        ctx.arc(-10, 10, 5, 0, Math.PI * 2);
+        ctx.arc(10, 10, 5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "#4a6a7a";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 22, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  private drawPings(world: World): void {
+    const { ctx } = this;
+    for (const ping of world.pings) {
+      if (ping.teamId !== world.player.teamId) continue;
+      const col =
+        ping.kind === "enemy" ? "#c43a2a" : ping.kind === "loot" ? "#d4a04a" : "#6a9ecf";
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ping.x, ping.y, 18 + Math.sin(world.time * 4) * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   private drawLoot(map: IslandMap): void {
     const { ctx } = this;
     for (const pile of map.loot) {
@@ -228,11 +307,13 @@ export class Renderer {
     for (const f of world.fighters) {
       if (f.state === "dead") continue;
       if (f.state === "plane") continue;
-      this.drawStick(f, f.id === world.player.id);
+      const isPlayer = f.id === world.player.id;
+      const isAlly = !isPlayer && f.teamId === world.player.teamId;
+      this.drawStick(f, isPlayer, isAlly, world.time);
     }
   }
 
-  private drawStick(f: Fighter, isPlayer: boolean): void {
+  private drawStick(f: Fighter, isPlayer: boolean, isAlly: boolean, _time: number): void {
     const { ctx } = this;
     ctx.save();
     ctx.translate(f.x, f.y);
@@ -259,8 +340,9 @@ export class Renderer {
 
     ctx.rotate(f.aim);
 
-    const body = isPlayer ? "#f0e8d8" : "#c4b59a";
-    const accent = isPlayer ? "#d4a04a" : "#6a6254";
+    const body = isPlayer ? "#f0e8d8" : isAlly ? "#a8d4a0" : "#c4b59a";
+    const accent = isPlayer ? "#d4a04a" : isAlly ? "#4a8f5a" : "#6a6254";
+    const legSwing = f.state === "alive" ? Math.sin(f.animPhase ?? 0) * 4 : 0;
 
     // legs
     ctx.strokeStyle = body;
@@ -268,10 +350,14 @@ export class Renderer {
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(-5, 12);
+    ctx.lineTo(-5 + legSwing, 12);
     ctx.moveTo(0, 0);
-    ctx.lineTo(5, 12);
+    ctx.lineTo(5 - legSwing, 12);
     ctx.stroke();
+
+    if (f.state === "downed") {
+      ctx.rotate(-Math.PI / 2.2);
+    }
 
     // torso
     ctx.beginPath();
@@ -341,6 +427,11 @@ export class Renderer {
       ctx.fillRect(f.x - hw / 2, f.y - 30, hw, 3);
       ctx.fillStyle = f.hp > 40 ? "#3d9e5a" : "#c45c2a";
       ctx.fillRect(f.x - hw / 2, f.y - 30, hw * (f.hp / 100), 3);
+    }
+    if (f.state === "downed") {
+      ctx.fillStyle = "#c45c2a";
+      ctx.font = "10px 'IBM Plex Sans'";
+      ctx.fillText("DOWNED", f.x, f.y + 22);
     }
     if (f.healTimer > 0) {
       ctx.fillStyle = "#d4a04a";
@@ -446,8 +537,22 @@ export class Renderer {
     for (const f of world.fighters) {
       if (f.state === "dead" || f.state === "plane") continue;
       const isP = f.id === world.player.id;
-      ctx.fillStyle = isP ? "#d4a04a" : "#c45c2a";
+      const isAlly = f.teamId === world.player.teamId && !isP;
+      ctx.fillStyle = isP ? "#d4a04a" : isAlly ? "#4a8f5a" : "#c45c2a";
       ctx.fillRect(f.x * scale - 1.5, f.y * scale - 1.5, isP ? 4 : 3, isP ? 4 : 3);
+    }
+
+    for (const ping of world.pings) {
+      if (ping.teamId !== world.player.teamId) continue;
+      ctx.fillStyle = ping.kind === "enemy" ? "#c43a2a" : "#6a9ecf";
+      ctx.fillRect(ping.x * scale - 2, ping.y * scale - 2, 4, 4);
+    }
+
+    if (world.redZone) {
+      ctx.fillStyle = "rgba(180,50,40,0.5)";
+      ctx.beginPath();
+      ctx.arc(world.redZone.x * scale, world.redZone.y * scale, world.redZone.r * scale, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }

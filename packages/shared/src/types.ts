@@ -95,6 +95,17 @@ export const PLAYER_SPEED = 165;
 export const PLAYER_ADS_SPEED = 110;
 export const MAX_HP = 100;
 export const MAX_BOOST = 100;
+export const CRAWL_SPEED = 55;
+export const KNOCK_BLEED_DPS = 5;
+export const REVIVE_RANGE = 52;
+export const REVIVE_TIME = 5;
+export const MATCHMAKE_WINDOW_MS = 12000;
+
+export function partyCapacity(size: PartySize): number {
+  if (size === "duo") return 2;
+  if (size === "squad") return 4;
+  return 1;
+}
 
 export const LOOT_WEIGHTS: Record<"hot" | "mid" | "quiet", LootTierWeights> = {
   hot: { weapon: 0.28, ammo: 0.22, heal: 0.16, armor: 0.14, attachment: 0.12, throwable: 0.08 },
