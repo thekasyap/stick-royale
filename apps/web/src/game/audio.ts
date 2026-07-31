@@ -103,4 +103,18 @@ export class GameAudio {
     this.noise(0.25, 0.14);
     this.tone(90, 0.3, "sawtooth", 0.08);
   }
+
+  dryFire(): void {
+    this.tone(90, 0.04, "square", 0.03);
+  }
+
+  reload(): void {
+    this.tone(240, 0.05, "triangle", 0.04);
+    this.tone(180, 0.08, "triangle", 0.03, 0.05);
+  }
+
+  damaged(): void {
+    this.noise(0.08, 0.05);
+    this.tone(140, 0.1, "sawtooth", 0.04);
+  }
 }

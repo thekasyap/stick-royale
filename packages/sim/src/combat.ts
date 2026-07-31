@@ -1,4 +1,4 @@
-import { WEAPONS, type Vec2 } from "@stick-royale/shared";
+import { ATTACHMENTS, WEAPONS, type Vec2 } from "@stick-royale/shared";
 import {
   activeWeapon,
   applyDamage,
@@ -7,7 +7,7 @@ import {
   type Fighter,
   type WeaponInstance,
 } from "./fighter";
-import { angleTo, chance, dist, lineHitsCircle } from "./math";
+import { angleTo, chance, dist, lineHitsCircle, segmentHitsAabb } from "./math";
 import type { Building, Cover } from "./mapgen";
 
 export type Bullet = {
@@ -119,14 +119,29 @@ export function tryFire(
     return true;
   }
 
-  if (inst.ammoInMag <= 0) return false;
+  if (inst.ammoInMag <= 0) {
+    // signal empty — caller should auto-reload or dry-fire
+    return false;
+  }
 
   f.fireCooldown = 1 / def.fireRate;
   inst.ammoInMag -= 1;
 
-  const spread = weaponSpread(inst, moving, ads);
+  // Recoil aim punch — attachments reduce it
+  let recoil = 0.045;
+  if (def.category === "smg") recoil = 0.035;
+  if (def.category === "ar") recoil = 0.05;
+  if (def.category === "dmr" || def.category === "sr") recoil = 0.08;
+  if (def.category === "sg") recoil = 0.07;
+  const grip = inst.attachments.grip ? ATTACHMENTS[inst.attachments.grip] : null;
+  const muzzle = inst.attachments.muzzle ? ATTACHMENTS[inst.attachments.muzzle] : null;
+  const recoilMul = (grip?.recoilMul ?? 1) * (muzzle?.recoilMul ?? 1);
+  f.aimPunch = Math.min(0.35, (f.aimPunch ?? 0) + recoil * recoilMul);
+
+  const spread = weaponSpread(inst, moving, ads) + (f.aimPunch ?? 0) * 0.35;
+  const aim = f.aim + ((f.aimPunch ?? 0) * (rng() - 0.5));
   for (let i = 0; i < def.pelletCount; i++) {
-    const ang = f.aim + (rng() - 0.5) * 2 * spread;
+    const ang = aim + (rng() - 0.5) * 2 * spread;
     const spd = def.bulletSpeed;
     bullets.push({
       id: `b_${++bulletSeq}`,
@@ -155,17 +170,35 @@ export function startReload(f: Fighter): boolean {
   const reserve = f.ammo[def.ammo] ?? 0;
   if (reserve <= 0) return false;
   f.reloadTimer = def.reloadTime;
+  f.reloadSlot = f.activeSlot;
   f.healTimer = 0;
   f.healItem = null;
   return true;
 }
 
+/** Call when switching weapon slots — cancel incomplete reload */
+export function cancelReload(f: Fighter): void {
+  if (f.reloadTimer > 0) {
+    f.reloadTimer = 0;
+    f.reloadSlot = null;
+  }
+}
+
 export function tickReload(f: Fighter, dt: number): void {
   if (f.reloadTimer <= 0) return;
+  // Mid-reload weapon swap: cancel instead of filling the wrong gun
+  if (f.reloadSlot !== null && f.reloadSlot !== f.activeSlot) {
+    f.reloadTimer = 0;
+    f.reloadSlot = null;
+    return;
+  }
   f.reloadTimer -= dt;
   if (f.reloadTimer > 0) return;
   f.reloadTimer = 0;
-  const inst = activeWeapon(f);
+  const slot = f.reloadSlot ?? f.activeSlot;
+  f.reloadSlot = null;
+  const inst =
+    slot === 0 ? f.primary : slot === 1 ? f.secondary : slot === 2 ? f.melee : null;
   if (!inst) return;
   const def = WEAPONS[inst.weaponId];
   if (!def?.ammo) return;
@@ -197,10 +230,7 @@ export function updateBullets(
 
     let blocked = false;
     for (const build of buildings) {
-      if (
-        b.x >= build.x && b.x <= build.x + build.w &&
-        b.y >= build.y && b.y <= build.y + build.h
-      ) {
+      if (segmentHitsAabb(ox, oy, b.x, b.y, build.x, build.y, build.w, build.h)) {
         blocked = true;
         break;
       }
@@ -227,8 +257,8 @@ export function updateBullets(
       if (owner && victim.teamId === owner.teamId && owner.id !== victim.id) continue;
       if (!circleRay(ox, oy, b.x, b.y, victim.x, victim.y, victim.radius)) continue;
       const headshot =
-        Math.abs(b.y - (victim.y - victim.radius * 0.55)) < victim.radius * 0.45 &&
-        chance(() => Math.random(), 0.25);
+        Math.abs(b.y - (victim.y - victim.radius * 0.55)) < victim.radius * 0.4 &&
+        Math.abs(b.x - victim.x) < victim.radius * 0.55;
       const raw = headshot ? b.damage * b.headMul : b.damage;
       const dealt = applyDamage(victim, raw, headshot, {
         allowKnock,
@@ -370,21 +400,6 @@ export function hasLos(
     if (lineHitsCircle(from.x, from.y, to.x, to.y, c.x, c.y, c.r * 0.8)) return false;
   }
   return true;
-}
-
-function segmentHitsAabb(
-  x1: number, y1: number, x2: number, y2: number,
-  rx: number, ry: number, rw: number, rh: number,
-): boolean {
-  // Liang-Barsky style quick reject via midpoint samples
-  const steps = 8;
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const x = x1 + (x2 - x1) * t;
-    const y = y1 + (y2 - y1) * t;
-    if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) return true;
-  }
-  return false;
 }
 
 export type { WeaponInstance };

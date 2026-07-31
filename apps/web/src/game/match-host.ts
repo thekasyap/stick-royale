@@ -12,6 +12,13 @@ export class MatchHost {
   private worker: Worker | null = null;
   private sim: MatchSim | null = null;
   private pending = false;
+  /** Latest input waiting to be sent — never drop player intent */
+  private queued: {
+    dt: number;
+    input: InputSnapshot;
+    viewW: number;
+    viewH: number;
+  } | null = null;
   bundle: RenderBundle | null = null;
   readonly useWorker: boolean;
 
@@ -30,6 +37,12 @@ export class MatchHost {
           this.bundle = msg.bundle;
           this.pending = false;
           this.onFrame(msg.bundle);
+          if (this.queued && this.worker) {
+            const q = this.queued;
+            this.queued = null;
+            this.pending = true;
+            this.worker.postMessage({ type: "tick", ...q });
+          }
         }
       };
       this.worker.postMessage({ type: "init", config });
@@ -47,9 +60,16 @@ export class MatchHost {
       this.onFrame(this.bundle);
       return;
     }
-    if (!this.worker || this.pending) return;
-    this.pending = true;
+    if (!this.worker) return;
     const snap = snapshotInput(input);
+    if (this.pending) {
+      // Overwrite queue with latest input; accumulate dt so sim doesn't starve
+      if (this.queued) this.queued.dt = Math.min(0.08, this.queued.dt + dt);
+      else this.queued = { dt, input: snap, viewW, viewH };
+      if (this.queued) this.queued.input = snap;
+      return;
+    }
+    this.pending = true;
     this.worker.postMessage({
       type: "tick",
       dt,
@@ -63,6 +83,7 @@ export class MatchHost {
     this.worker?.terminate();
     this.worker = null;
     this.sim = null;
+    this.queued = null;
   }
 
   get matchOver(): boolean {

@@ -177,17 +177,16 @@ function findThreat(
   const range2 = range * range;
   for (const f of fighters) {
     if (f.id === bot.id || f.state !== "alive") continue;
+    if (f.teamId === bot.teamId) continue;
     const dx = bot.x - f.x;
     const dy = bot.y - f.y;
     const d2 = dx * dx + dy * dy;
     if (d2 > range2) continue;
     const d = Math.sqrt(d2);
-    // cheap LOS: skip full building scan past mid range
-    if (d < 160 || hasLos(bot, f, map.buildings, map.cover)) {
-      if (d < bestD) {
-        bestD = d;
-        best = f;
-      }
+    // Always require LOS — no wallbangs at close range
+    if (d < bestD && hasLos(bot, f, map.buildings, map.cover)) {
+      bestD = d;
+      best = f;
     }
   }
   return best;
@@ -238,8 +237,11 @@ function botLoot(
   if (dist(bot, pile) < 36) {
     while (pile.items.length > 0) {
       const item = pile.items[0]!;
-      if (tryPickup(bot, item)) pile.items.shift();
-      else break;
+      const res = tryPickup(bot, item);
+      if (res.ok) {
+        pile.items.shift();
+        if (res.dropped) pile.items.push(res.dropped);
+      } else break;
     }
     if (pile.items.length === 0) bot.lootTargetId = null;
   }
@@ -317,7 +319,7 @@ function botEngage(
   const maxRange = def?.range ?? 200;
   if (d < maxRange * 0.95 && hasLos(bot, enemy, map.buildings, map.cover)) {
     if (rng() < profile.accuracy * dt * 8) {
-      tryFire(bot, true, true, bullets, melees, frags, smokes, rng);
+      tryFire(bot, true, false, bullets, melees, frags, smokes, rng);
       bot.botReactUntil = time + profile.reaction * (0.5 + rng());
     }
   }

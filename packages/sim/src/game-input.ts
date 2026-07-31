@@ -5,6 +5,7 @@ export interface GameInput {
   mouseY: number;
   mouseDown: boolean;
   mouseRight: boolean;
+  wheelDelta?: number;
   pressed(key: string): boolean;
   down(key: string): boolean;
   moveVector(): { x: number; y: number };
@@ -19,6 +20,7 @@ export type InputSnapshot = {
   mouseRight: boolean;
   touchMoveX: number;
   touchMoveY: number;
+  wheelDelta?: number;
 };
 
 export function snapshotInput(input: GameInput): InputSnapshot {
@@ -42,6 +44,7 @@ export function snapshotInput(input: GameInput): InputSnapshot {
     mouseRight: input.mouseRight,
     touchMoveX: mv.x,
     touchMoveY: mv.y,
+    wheelDelta: input.wheelDelta ?? 0,
   };
 }
 
@@ -53,6 +56,7 @@ export function inputFromSnapshot(s: InputSnapshot): GameInput {
     mouseY: s.mouseY,
     mouseDown: s.mouseDown,
     mouseRight: s.mouseRight,
+    wheelDelta: s.wheelDelta ?? 0,
     pressed: (k) => just.has(k.toLowerCase()),
     down: (k) => keys.has(k.toLowerCase()),
     moveVector: () => {

@@ -86,9 +86,9 @@ export class Input {
         const dx = x - this.stickOrigin.x;
         const dy = y - this.stickOrigin.y;
         const len = Math.hypot(dx, dy) || 1;
-        const max = 48;
-        const scale = Math.min(1, max / len);
-        this.touchMove = { x: (dx / len) * scale, y: (dy / len) * scale };
+        const max = 56;
+        const mag = Math.min(1, len / max);
+        this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
         e.preventDefault();
       }
     }
@@ -114,6 +114,17 @@ export class Input {
     this.justPressed.clear();
     this.wheelDelta = 0;
     this.touchInteract = false;
+  }
+
+  /** Mobile HUD buttons */
+  injectPress(key: string): void {
+    const k = key.toLowerCase();
+    if (!this.keys.has(k)) this.justPressed.add(k);
+    this.keys.add(k);
+  }
+
+  injectRelease(key: string): void {
+    this.keys.delete(key.toLowerCase());
   }
 
   pressed(key: string): boolean {

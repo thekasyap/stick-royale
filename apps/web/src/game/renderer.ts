@@ -82,10 +82,12 @@ export class Renderer {
   private drawCrosshair(mx: number, my: number, world: RenderBundle): void {
     if (world.player.state === "plane" || world.player.state === "dead") return;
     const { ctx } = this;
-    const gap = world.player.state === "parachute" ? 10 : 5;
+    const punch = world.player.aimPunch ?? 0;
+    const reloading = world.player.reloadTimer > 0;
+    const gap = world.player.state === "parachute" ? 10 : 5 + punch * 40 + (reloading ? 8 : 0);
     const len = 7;
     ctx.save();
-    ctx.strokeStyle = "rgba(240, 232, 216, 0.9)";
+    ctx.strokeStyle = reloading ? "rgba(212, 160, 74, 0.85)" : "rgba(240, 232, 216, 0.9)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(mx - gap - len, my);
@@ -415,13 +417,15 @@ export class Renderer {
 
     ctx.restore();
 
-    // name / hp
+    // name / hp — allies + self only (no enemy HP wallhacks)
     ctx.save();
     ctx.font = "600 11px 'IBM Plex Sans', sans-serif";
     ctx.textAlign = "center";
     ctx.fillStyle = isPlayer ? "#d4a04a" : "rgba(240,232,216,0.75)";
-    ctx.fillText(f.name, f.x, f.y - 34);
-    if (f.state === "alive") {
+    if (isPlayer || isAlly || f.state === "downed") {
+      ctx.fillText(f.name, f.x, f.y - 34);
+    }
+    if (f.state === "alive" && (isPlayer || isAlly)) {
       const hw = 28;
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.fillRect(f.x - hw / 2, f.y - 30, hw, 3);
@@ -433,7 +437,7 @@ export class Renderer {
       ctx.font = "10px 'IBM Plex Sans'";
       ctx.fillText("DOWNED", f.x, f.y + 22);
     }
-    if (f.healTimer > 0) {
+    if (f.healTimer > 0 && (isPlayer || isAlly)) {
       ctx.fillStyle = "#d4a04a";
       ctx.font = "10px 'IBM Plex Sans'";
       ctx.fillText("Healing…", f.x, f.y + 22);
@@ -538,7 +542,9 @@ export class Renderer {
       if (f.state === "dead" || f.state === "plane") continue;
       const isP = f.id === world.player.id;
       const isAlly = f.teamId === world.player.teamId && !isP;
-      ctx.fillStyle = isP ? "#d4a04a" : isAlly ? "#4a8f5a" : "#c45c2a";
+      // Fog of war — no enemy blips on minimap (BR awareness)
+      if (!isP && !isAlly) continue;
+      ctx.fillStyle = isP ? "#d4a04a" : "#4a8f5a";
       ctx.fillRect(f.x * scale - 1.5, f.y * scale - 1.5, isP ? 4 : 3, isP ? 4 : 3);
     }
 

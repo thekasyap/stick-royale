@@ -2,14 +2,15 @@ import type { ArmorDef, HealDef, PoiDef, ZonePhase } from "./types.js";
 import { MAP_SIZE } from "./types.js";
 
 /** Blue zone — 7 phases; paced for ~8–12 min classic matches */
+/** Paced for ~10–14 min Classic — phase 1 gives real loot time after drop */
 export const ZONE_PHASES: ZonePhase[] = [
-  { phase: 1, waitTime: 28, shrinkTime: 28, radius: 900, damagePerSecond: 1 },
-  { phase: 2, waitTime: 22, shrinkTime: 24, radius: 620, damagePerSecond: 2 },
-  { phase: 3, waitTime: 18, shrinkTime: 20, radius: 400, damagePerSecond: 4 },
-  { phase: 4, waitTime: 15, shrinkTime: 18, radius: 240, damagePerSecond: 7 },
-  { phase: 5, waitTime: 12, shrinkTime: 15, radius: 130, damagePerSecond: 11 },
-  { phase: 6, waitTime: 10, shrinkTime: 12, radius: 60, damagePerSecond: 15 },
-  { phase: 7, waitTime: 8, shrinkTime: 12, radius: 18, damagePerSecond: 22 },
+  { phase: 1, waitTime: 55, shrinkTime: 35, radius: 980, damagePerSecond: 1 },
+  { phase: 2, waitTime: 28, shrinkTime: 28, radius: 680, damagePerSecond: 2 },
+  { phase: 3, waitTime: 22, shrinkTime: 24, radius: 430, damagePerSecond: 4 },
+  { phase: 4, waitTime: 18, shrinkTime: 20, radius: 260, damagePerSecond: 7 },
+  { phase: 5, waitTime: 14, shrinkTime: 16, radius: 140, damagePerSecond: 11 },
+  { phase: 6, waitTime: 12, shrinkTime: 14, radius: 70, damagePerSecond: 15 },
+  { phase: 7, waitTime: 10, shrinkTime: 12, radius: 22, damagePerSecond: 22 },
 ];
 
 /** Hand-authored POIs on the island */

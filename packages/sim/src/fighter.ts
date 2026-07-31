@@ -56,10 +56,16 @@ export type Fighter = {
   smokes: number;
   attachments: string[];
   reloadTimer: number;
+  /** Slot being reloaded — prevents mid-reload swap filling the wrong gun */
+  reloadSlot: 0 | 1 | 2 | 3 | null;
   fireCooldown: number;
   healTimer: number;
   healItem: keyof typeof HEALS | null;
   invuln: number;
+  /** Decaying aim punch from recoil (radians) */
+  aimPunch: number;
+  /** Parachute altitude 1→0 while gliding */
+  chuteAlt: number;
   teamId: number;
   // bot AI
   botState?: string;
@@ -128,16 +134,19 @@ export function createFighter(
       attachments: {},
     },
     activeSlot: 1,
-    ammo: { "556": 60, "762": 0, "9mm": 45, "12g": 0, "45": 0 },
+    ammo: { "556": 30, "762": 0, "9mm": 60, "12g": 0, "45": 0 },
     heals: { bandage: 5 },
     frags: 0,
     smokes: 0,
     attachments: [],
     reloadTimer: 0,
+    reloadSlot: null,
     fireCooldown: 0,
     healTimer: 0,
     healItem: null,
     invuln: 0,
+    aimPunch: 0,
+    chuteAlt: 1,
     teamId: isBot ? 1 : 0,
     botState: "drop",
     botTargetId: null,
@@ -293,64 +302,74 @@ export function backpackCap(f: Fighter): number {
   return 30;
 }
 
-export function tryPickup(f: Fighter, item: LootKind): boolean {
+/** Returns replaced weapon loot (if any) so caller can drop it on the ground */
+export function tryPickup(f: Fighter, item: LootKind): { ok: boolean; dropped?: LootKind } {
   switch (item.type) {
     case "weapon": {
       const def = WEAPONS[item.weaponId];
-      if (!def) return false;
+      if (!def) return { ok: false };
       const inst: WeaponInstance = {
         weaponId: item.weaponId,
         ammoInMag: def.magSize,
         attachments: {},
       };
       if (def.ammo) {
-        f.ammo[def.ammo] = (f.ammo[def.ammo] ?? 0) + def.magSize;
+        f.ammo[def.ammo] = (f.ammo[def.ammo] ?? 0) + Math.max(12, Math.floor(def.magSize * 0.75));
       }
+      let dropped: LootKind | undefined;
       if (def.slot === "secondary") {
+        if (f.secondary && f.secondary.weaponId !== STARTER_WEAPON) {
+          dropped = { type: "weapon", weaponId: f.secondary.weaponId };
+        }
         f.secondary = inst;
         f.activeSlot = 1;
       } else if (def.slot === "melee") {
+        if (f.melee.weaponId !== STARTER_MELEE) {
+          dropped = { type: "weapon", weaponId: f.melee.weaponId };
+        }
         f.melee = inst;
       } else if (def.slot === "throwable") {
         if (item.weaponId === "frag") f.frags += 1;
         else f.smokes += 1;
       } else {
+        if (f.primary) dropped = { type: "weapon", weaponId: f.primary.weaponId };
         f.primary = inst;
         f.activeSlot = 0;
       }
-      return true;
+      f.reloadTimer = 0;
+      f.reloadSlot = null;
+      return { ok: true, dropped };
     }
     case "ammo": {
       f.ammo[item.ammo] = (f.ammo[item.ammo] ?? 0) + item.amount;
-      return true;
+      return { ok: true };
     }
     case "heal": {
       const cur = f.heals[item.healId] ?? 0;
       const max = HEALS[item.healId].maxStack;
-      if (cur >= max) return false;
+      if (cur >= max) return { ok: false };
       f.heals[item.healId] = Math.min(max, cur + item.amount);
-      return true;
+      return { ok: true };
     }
     case "armor": {
       const def = ARMOR[item.armorId];
-      if (!def) return false;
+      if (!def) return { ok: false };
       if (def.slot === "helmet" && def.level > f.helmet) {
         f.helmet = def.level;
-        return true;
+        return { ok: true };
       }
       if (def.slot === "vest" && def.level > f.vest) {
         f.vest = def.level;
-        return true;
+        return { ok: true };
       }
       if (def.slot === "backpack" && def.level > f.backpack) {
         f.backpack = def.level;
-        return true;
+        return { ok: true };
       }
-      return false;
+      return { ok: false };
     }
     case "attachment": {
       f.attachments.push(item.attachmentId);
-      // auto-equip if compatible with active gun
       const att = ATTACHMENTS[item.attachmentId];
       const gun = activeWeapon(f);
       if (att && gun) {
@@ -359,12 +378,12 @@ export function tryPickup(f: Fighter, item: LootKind): boolean {
           gun.attachments[att.slot] = att.id;
         }
       }
-      return true;
+      return { ok: true };
     }
     case "throwable": {
       if (item.weaponId === "frag") f.frags += item.amount;
       else f.smokes += item.amount;
-      return true;
+      return { ok: true };
     }
   }
 }

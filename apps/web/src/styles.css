@@ -428,9 +428,45 @@ body,
   margin-top: 0.25rem;
 }
 
+.kill-feed .entry.you {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mobile-controls {
+  display: none;
+  position: absolute;
+  right: 12px;
+  bottom: 110px;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+
+.mobile-controls .mbtn {
+  min-width: 52px;
+  min-height: 44px;
+  border: 1px solid rgba(212, 160, 74, 0.45);
+  background: rgba(20, 24, 18, 0.72);
+  color: #f0e8d8;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  touch-action: manipulation;
+}
+
+.mobile-controls .mbtn:active,
+.mobile-controls .mbtn.active {
+  background: rgba(212, 160, 74, 0.35);
+}
+
 @media (max-width: 640px) {
   .brand { font-size: 3.8rem; }
   #minimap { width: 100px; height: 100px; }
   .hud-bottom { gap: 10px; scale: 0.9; }
   .row { grid-template-columns: 1fr; }
+  .mobile-controls { display: flex; }
 }

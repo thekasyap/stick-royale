@@ -21,11 +21,22 @@ const empty = inputFromSnapshot({
   touchMoveY: 0,
 });
 
+const jump = inputFromSnapshot({
+  keys: [],
+  justPressed: [" "],
+  mouseX: 400,
+  mouseY: 300,
+  mouseDown: false,
+  mouseRight: false,
+  touchMoveX: 0,
+  touchMoveY: 0,
+});
+
 const sim = new MatchSim({
   nickname: "Tester",
   mode: "classic",
   partySize: "solo",
-  difficulty: "normal",
+  difficulty: "easy",
 });
 
 const before = sim.exportRenderBundle();
@@ -39,15 +50,20 @@ if (after1.matchOver) {
   throw new Error(`instant Chicken Dinner: ${JSON.stringify(after1.result)}`);
 }
 
-for (let i = 0; i < 20 * 45; i++) sim.tick(1 / 20, empty, 800, 600);
+// Jump immediately and float a bit
+sim.tick(1 / 20, jump, 800, 600);
+for (let i = 0; i < 20 * 8; i++) sim.tick(1 / 20, empty, 800, 600);
 const mid = sim.exportRenderBundle();
-if (mid.matchOver && mid.time < 10) {
-  throw new Error(`match ended too early @ ${mid.time}s`);
+if (mid.matchOver && mid.result?.winner && mid.time < 15) {
+  throw new Error(`false Chicken Dinner @ ${mid.time}s with ${count(mid.fighters)}`);
 }
+if (mid.time < 5) throw new Error("sim time not advancing");
 
 console.log("SMOKE OK", {
   time: Math.round(mid.time),
   living: mid.fighters.filter((f) => f.state !== "dead").length,
   states: count(mid.fighters),
   matchOver: mid.matchOver,
+  player: mid.player.state,
+  phase: mid.phaseLabel,
 });

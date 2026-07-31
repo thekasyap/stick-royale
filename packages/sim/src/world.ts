@@ -1,4 +1,5 @@
 import {
+  ATTACHMENTS,
   CRAWL_SPEED,
   LOBBY_SIZE,
   MAP_SIZE,
@@ -15,6 +16,7 @@ import { assignBotNames, updateBot } from "./bots";
 import {
   resolveCollision,
   startReload,
+  cancelReload,
   tryFire,
   updateBullets,
   updateFrags,
@@ -101,6 +103,20 @@ export class World {
   partySize: PartySize;
   camera = { x: 0, y: 0, zoom: 1 };
   prompt = "";
+  /** Client diffs these counters each frame for SFX */
+  sfx = {
+    shots: 0,
+    hits: 0,
+    crits: 0,
+    loots: 0,
+    jumps: 0,
+    zoneWarns: 0,
+    redZones: 0,
+    dryFires: 0,
+    reloads: 0,
+    damaged: 0,
+  };
+  damageDir = 0;
   private deathOrder: string[] = [];
   private startedAt = 0;
   private nowMs: () => number;
@@ -109,6 +125,10 @@ export class World {
   private lastZonePhase = 0;
   private allowKnock: boolean;
   private pingSeq = 0;
+  /** Zone clock starts after first landing so plane time isn't wasted loot time */
+  private zoneStarted = false;
+  private lootSeq = 0;
+  private lastAds = false;
 
   constructor(config: MatchConfig, _audio?: unknown, startedAtMs?: number) {
     this.nowMs = () => Date.now();
@@ -245,6 +265,7 @@ export class World {
           tickReload(f, dt);
           tickHeal(f, dt);
           tickBoost(f, dt);
+          if (f.aimPunch > 0) f.aimPunch = Math.max(0, f.aimPunch - dt * 1.8);
         }
         if (f.fireCooldown > 0) f.fireCooldown -= dt;
         if (f.invuln > 0) f.invuln -= dt;
@@ -292,7 +313,14 @@ export class World {
           life: 0.7,
           crit: dmg >= 40,
         });
-        if (attacker.id === this.player.id) { /* audio handled by client */ }
+        if (attacker.id === this.player.id) {
+          this.sfx.hits += 1;
+          if (dmg >= 40) this.sfx.crits += 1;
+        }
+        if (victim.id === this.player.id) {
+          this.sfx.damaged += 1;
+          this.damageDir = angleTo(victim, attacker);
+        }
       }
       if (victim.state === "downed" && !this.deathOrder.includes(victim.id)) {
         this.pushFeed(attacker, victim, weaponId, true);
@@ -331,8 +359,17 @@ export class World {
     }
 
     const prevPhase = this.zone.phaseIndex;
-    updateZone(this.zone, dt, this.rng);
-    if (this.zone.phaseIndex > prevPhase) { /* zone warning — client */ }
+    const prevShrink = this.zone.shrinking;
+    // Delay zone clock until someone has landed (or plane almost done)
+    if (!this.zoneStarted) {
+      const landed = this.fighters.some((f) => f.state === "alive" || f.state === "downed");
+      if (landed || this.plane.pathT > 0.9) this.zoneStarted = true;
+    } else {
+      updateZone(this.zone, dt, this.rng);
+    }
+    if (this.zone.phaseIndex > prevPhase || (!prevShrink && this.zone.shrinking)) {
+      this.sfx.zoneWarns += 1;
+    }
 
     this.pings = this.pings.filter((p) => p.until > this.time);
     this.updateCamera(viewW, viewH);
@@ -372,6 +409,7 @@ export class World {
         active: false,
       };
       /* red zone sfx — client */
+      this.sfx.redZones += 1;
     }
     this.redZone = tickRedZone(this.redZone, this.fighters, this.time, dt, (f, dmg) => {
       f.hp -= dmg;
@@ -388,13 +426,18 @@ export class World {
       p.y = this.plane.y;
       if (input.pressed(" ") || input.pressed("f") || input.pressed("e")) {
         p.state = "parachute";
+        p.chuteAlt = 1;
         p.dropTarget = {
           x: this.camera.x + (input.mouseX - viewW / 2) / this.camera.zoom,
           y: this.camera.y + (input.mouseY - viewH / 2) / this.camera.zoom,
         };
-        /* jump sfx — client */
+        this.sfx.jumps += 1;
       }
-      if (this.plane.pathT > 0.85) p.state = "parachute";
+      if (this.plane.pathT > 0.85) {
+        p.state = "parachute";
+        p.chuteAlt = 1;
+        this.sfx.jumps += 1;
+      }
       return;
     }
 
@@ -402,15 +445,17 @@ export class World {
       const worldMx = this.camera.x + (input.mouseX - viewW / 2) / this.camera.zoom;
       const worldMy = this.camera.y + (input.mouseY - viewH / 2) / this.camera.zoom;
       const move = input.moveVector();
-      p.x += move.x * 150 * dt;
-      p.y += move.y * 150 * dt;
-      p.x += Math.cos(angleTo(p, { x: worldMx, y: worldMy })) * 40 * dt;
-      p.y += Math.sin(angleTo(p, { x: worldMx, y: worldMy })) * 40 * dt;
+      p.x += move.x * 160 * dt;
+      p.y += move.y * 160 * dt;
+      p.x += Math.cos(angleTo(p, { x: worldMx, y: worldMy })) * 55 * dt;
+      p.y += Math.sin(angleTo(p, { x: worldMx, y: worldMy })) * 55 * dt;
       p.aim = angleTo(p, { x: worldMx, y: worldMy });
-      p.botTimer = (p.botTimer ?? 0) + dt;
-      if (input.pressed(" ") || input.pressed("f") || (p.botTimer ?? 0) > 3.5) {
+      p.chuteAlt = Math.max(0, (p.chuteAlt ?? 1) - dt * 0.22);
+      this.prompt = `Altitude ${Math.ceil((p.chuteAlt ?? 0) * 100)}% · SPACE cut chute`;
+      if (input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0) {
         p.state = "alive";
-        p.invuln = 0.4;
+        p.invuln = 0.5;
+        p.chuteAlt = 0;
       }
       return;
     }
@@ -451,16 +496,25 @@ export class World {
     }
 
     const ads = input.mouseRight || input.down("shift");
+    this.lastAds = ads;
     const move = input.moveVector();
     const speed = (ads ? PLAYER_ADS_SPEED : PLAYER_SPEED) * (p.healTimer > 0 ? 0.45 : 1);
     p.x += move.x * speed * dt;
     p.y += move.y * speed * dt;
 
-    if (input.pressed("1")) p.activeSlot = 0;
-    if (input.pressed("2")) p.activeSlot = 1;
-    if (input.pressed("3")) p.activeSlot = 2;
-    if (input.pressed("4")) p.activeSlot = 3;
-    if (input.pressed("r")) startReload(p);
+    if (input.pressed("1")) { cancelReload(p); p.activeSlot = 0; }
+    if (input.pressed("2")) { cancelReload(p); p.activeSlot = 1; }
+    if (input.pressed("3")) { cancelReload(p); p.activeSlot = 2; }
+    if (input.pressed("4")) { cancelReload(p); p.activeSlot = 3; }
+    // Mouse wheel weapon cycle
+    if (Math.abs((input as { wheelDelta?: number }).wheelDelta ?? 0) > 0) {
+      const dir = ((input as { wheelDelta?: number }).wheelDelta ?? 0) > 0 ? 1 : -1;
+      cancelReload(p);
+      p.activeSlot = (((p.activeSlot + dir) % 4) + 4) % 4 as 0 | 1 | 2 | 3;
+    }
+    if (input.pressed("r")) {
+      if (startReload(p)) this.sfx.reloads += 1;
+    }
     if (input.pressed("q")) startHeal(p, "bandage");
     if (input.pressed("c")) startHeal(p, "medkit");
     if (input.pressed("z")) startHeal(p, "energy_drink");
@@ -479,23 +533,25 @@ export class World {
     const nearCare = this.carePackages.find((c) => c.landed && dist(p, c) < 52);
     if (nearCare && !downedMate) {
       this.prompt = "F — Care Package";
-      if (input.down("f") || input.pressed("f")) {
-        for (const item of nearCare.items) tryPickup(p, item);
-        nearCare.items = [];
+      if (input.pressed("f") || input.pressed("e")) {
+        const left: typeof nearCare.items = [];
+        for (const item of nearCare.items) {
+          const res = tryPickup(p, item);
+          if (res.ok) {
+            this.sfx.loots += 1;
+            if (res.dropped) this.dropItemAt(p.x, p.y, res.dropped);
+          } else left.push(item);
+        }
+        nearCare.items = left;
         this.carePackages = this.carePackages.filter((c) => c.items.length > 0 || !c.landed);
-        /* care package loot */
       }
     } else if (near && !downedMate) {
       const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
       this.prompt = `F — ${labels}`;
-      if (input.down("f") || input.down("e") || input.pressed("f") || input.pressed("e")) {
+      if (input.pressed("f") || input.pressed("e")) {
         const before = near.items.length;
         this.pickupLoot(p, near);
-        for (const pile of this.map.loot) {
-          if (pile === near || pile.items.length === 0) continue;
-          if (dist(p, pile) < 48) this.pickupLoot(p, pile);
-        }
-        if (near.items.length < before) { /* loot sfx */ }
+        if (near.items.length < before) this.sfx.loots += 1;
       }
     }
 
@@ -504,13 +560,19 @@ export class World {
 
     if (input.mouseDown) {
       const gun = activeWeapon(p);
-      const cat = gun ? WEAPONS[gun.weaponId]?.category : "ar";
-      if (tryFire(p, ads, move.x !== 0 || move.y !== 0, this.bullets, this.melees, this.frags, this.smokes, this.rng)) {
-        /* shoot sfx — client */
+      if (gun && WEAPONS[gun.weaponId]?.ammo && gun.ammoInMag <= 0) {
+        const def = WEAPONS[gun.weaponId]!;
+        const reserve = p.ammo[def.ammo!] ?? 0;
+        if (reserve > 0) {
+          if (startReload(p)) this.sfx.reloads += 1;
+        } else if (p.fireCooldown <= 0) {
+          this.sfx.dryFires += 1;
+          p.fireCooldown = 0.25;
+        }
+      } else if (tryFire(p, ads, move.x !== 0 || move.y !== 0, this.bullets, this.melees, this.frags, this.smokes, this.rng)) {
+        this.sfx.shots += 1;
       }
     }
-
-    if (p.fireCooldown > 0) p.fireCooldown -= dt;
   }
 
   private addPing(x: number, y: number, kind: "move" | "enemy" | "loot"): void {
@@ -541,9 +603,20 @@ export class World {
   private pickupLoot(f: Fighter, pile: LootPile): void {
     const remaining: LootKind[] = [];
     for (const item of pile.items) {
-      if (!tryPickup(f, item)) remaining.push(item);
+      const res = tryPickup(f, item);
+      if (!res.ok) remaining.push(item);
+      else if (res.dropped) this.dropItemAt(f.x + (this.rng() - 0.5) * 16, f.y + (this.rng() - 0.5) * 16, res.dropped);
     }
     pile.items = remaining;
+  }
+
+  private dropItemAt(x: number, y: number, item: LootKind): void {
+    this.map.loot.push({
+      id: `drop_${++this.lootSeq}_${this.time}`,
+      x,
+      y,
+      items: [item],
+    });
   }
 
   private pushFeed(attacker: Fighter, victim: Fighter, weaponId: string, knocked: boolean): void {
@@ -624,10 +697,23 @@ export class World {
 
   private updateCamera(viewW: number, viewH: number): void {
     const p = this.player;
-    const targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.7 : 1;
-    this.camera.zoom += (targetZoom - this.camera.zoom) * 0.08;
-    this.camera.x += (p.x - this.camera.x) * 0.15;
-    this.camera.y += (p.y - this.camera.y) * 0.15;
+    let targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.65 : 1;
+    // ADS zoom from scope attachment
+    if (p.state === "alive") {
+      const gun = activeWeapon(p);
+      const scopeId = gun?.attachments.scope;
+      const scope = scopeId ? ATTACHMENTS[scopeId] : null;
+      const adsZoom = scope?.zoom ?? 1.2;
+      // Approximate ADS via mouse right — camera doesn't know input; use mild default when punch active
+      if ((p.aimPunch ?? 0) > 0.02 || p.reloadTimer > 0) {
+        /* keep base */
+      }
+      // Client passes ads via… we store lastAds on world
+      if (this.lastAds) targetZoom *= Math.min(2.2, adsZoom);
+    }
+    this.camera.zoom += (targetZoom - this.camera.zoom) * 0.12;
+    this.camera.x += (p.x - this.camera.x) * 0.18;
+    this.camera.y += (p.y - this.camera.y) * 0.18;
     void viewW;
     void viewH;
   }
@@ -728,6 +814,10 @@ export class World {
       result: this.result,
       camera: this.camera,
       prompt: this.prompt,
+      sfx: { ...this.sfx },
+      damageDir: this.damageDir,
+      phaseLabel: zonePhaseLabel(this.zone),
+      zoneStarted: this.zoneStarted,
     };
   }
 }

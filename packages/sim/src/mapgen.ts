@@ -7,6 +7,7 @@ import {
   POIS,
   WEAPON_LOOT_POOL,
   ATTACHMENT_LOOT_POOL,
+  WEAPONS,
   type AmmoType,
   type PoiDef,
 } from "@stick-royale/shared";
@@ -118,12 +119,25 @@ function spawnBuildingLoot(
   for (let i = 0; i < count; i++) {
     const items: LootKind[] = [rollLootItem(rng, tier)];
     if (chance(rng, 0.35)) items.push(rollLootItem(rng, tier));
-    out.push({
-      id: nextLootId(),
-      x: b.x + 12 + rng() * (b.w - 24),
-      y: b.y + 12 + rng() * (b.h - 24),
-      items,
-    });
+    // Spawn on building perimeter so piles are reachable (buildings are solid AABBs)
+    const side = Math.floor(rng() * 4);
+    const pad = 18 + rng() * 10;
+    let x = b.x + b.w / 2;
+    let y = b.y + b.h / 2;
+    if (side === 0) {
+      x = b.x + rng() * b.w;
+      y = b.y - pad;
+    } else if (side === 1) {
+      x = b.x + b.w + pad;
+      y = b.y + rng() * b.h;
+    } else if (side === 2) {
+      x = b.x + rng() * b.w;
+      y = b.y + b.h + pad;
+    } else {
+      x = b.x - pad;
+      y = b.y + rng() * b.h;
+    }
+    out.push({ id: nextLootId(), x, y, items });
   }
 }
 
@@ -181,7 +195,7 @@ export function generateMap(seed: number): IslandMap {
       });
     }
 
-    // Outdoor loot scatter
+    // Outdoor loot scatter — guaranteed ground weapon near hot/mid POIs
     const outdoor = poi.tier === "hot" ? 8 : poi.tier === "mid" ? 5 : 3;
     for (let i = 0; i < outdoor; i++) {
       const angle = rng() * Math.PI * 2;
@@ -191,6 +205,16 @@ export function generateMap(seed: number): IslandMap {
         x: poi.x + Math.cos(angle) * dist,
         y: poi.y + Math.sin(angle) * dist,
         items: [rollLootItem(rng, poi.tier)],
+      });
+    }
+    if (poi.tier !== "quiet") {
+      const ang = rng() * Math.PI * 2;
+      const d = 40 + rng() * 50;
+      loot.push({
+        id: nextLootId(),
+        x: poi.x + Math.cos(ang) * d,
+        y: poi.y + Math.sin(ang) * d,
+        items: [{ type: "weapon", weaponId: pick(rng, poi.tier === "hot" ? ["sparkwave", "ironclad", "buzzsaw", "rattler"] : ["rattler", "sidekick", "thumper"]) }],
       });
     }
   }
@@ -219,11 +243,11 @@ export function generateMap(seed: number): IslandMap {
 
 export function lootLabel(item: LootKind): string {
   switch (item.type) {
-    case "weapon": return item.weaponId;
-    case "ammo": return `${item.ammo} x${item.amount}`;
-    case "heal": return `${HEALS[item.healId].name} x${item.amount}`;
+    case "weapon": return WEAPONS[item.weaponId]?.name ?? item.weaponId;
+    case "ammo": return `${item.ammo} ×${item.amount}`;
+    case "heal": return `${HEALS[item.healId].name} ×${item.amount}`;
     case "armor": return ARMOR[item.armorId].name;
     case "attachment": return ATTACHMENTS[item.attachmentId]?.name ?? item.attachmentId;
-    case "throwable": return `${item.weaponId} x${item.amount}`;
+    case "throwable": return `${item.weaponId === "frag" ? "Frag" : "Smoke"} ×${item.amount}`;
   }
 }

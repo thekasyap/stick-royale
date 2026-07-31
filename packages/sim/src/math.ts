@@ -101,3 +101,35 @@ export function lineHitsCircle(
   const t2 = (-b + disc) / (2 * a);
   return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
 }
+
+/** Segment vs AABB (for bullet vs building walls) */
+export function segmentHitsAabb(
+  x1: number, y1: number, x2: number, y2: number,
+  rx: number, ry: number, rw: number, rh: number,
+): boolean {
+  // Liang–Barsky style quick reject + inside checks
+  if (rectContains(x1, y1, rx, ry, rw, rh) || rectContains(x2, y2, rx, ry, rw, rh)) return true;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number): boolean => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+    return true;
+  };
+  return (
+    clip(-dx, x1 - rx) &&
+    clip(dx, rx + rw - x1) &&
+    clip(-dy, y1 - ry) &&
+    clip(dy, ry + rh - y1) &&
+    t0 < t1
+  );
+}

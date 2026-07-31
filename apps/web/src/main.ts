@@ -37,14 +37,52 @@ class GameApp {
   private raf = 0;
   private last = 0;
   private running = false;
+  private lastSfx = {
+    shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
+    zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
+  };
+  private damageFlash = 0;
 
   constructor() {
     ensureGuestId();
     this.bindLobby();
+    this.bindMobileControls();
     this.resize();
     window.addEventListener("resize", () => this.resize());
     $("play-again").addEventListener("click", () => this.backToLobby());
     this.audio.setEnabled(localStorage.getItem(AUDIO_KEY) !== "0");
+  }
+
+  private bindMobileControls(): void {
+    const root = $("mobile-controls");
+    root.querySelectorAll("[data-key]").forEach((btn) => {
+      const key = (btn as HTMLElement).dataset.key!;
+      const press = (e: Event) => {
+        e.preventDefault();
+        this.input.injectPress(key);
+      };
+      const release = () => this.input.injectRelease(key);
+      btn.addEventListener("touchstart", press, { passive: false });
+      btn.addEventListener("touchend", release);
+      btn.addEventListener("mousedown", press);
+      btn.addEventListener("mouseup", release);
+    });
+    const ads = root.querySelector("[data-ads]");
+    if (ads) {
+      const down = (e: Event) => {
+        e.preventDefault();
+        this.input.mouseRight = true;
+        ads.classList.add("active");
+      };
+      const up = () => {
+        this.input.mouseRight = false;
+        ads.classList.remove("active");
+      };
+      ads.addEventListener("touchstart", down, { passive: false });
+      ads.addEventListener("touchend", up);
+      ads.addEventListener("mousedown", down);
+      ads.addEventListener("mouseup", up);
+    }
   }
 
   private bindLobby(): void {
@@ -90,7 +128,13 @@ class GameApp {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
+    this.lastSfx = {
+      shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
+      zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
+    };
+    this.damageFlash = 0;
     this.host = new MatchHost((bundle) => {
+      this.playSfxDiff(bundle);
       this.bundle = bundle;
     });
     this.host.start(config);
@@ -98,6 +142,29 @@ class GameApp {
     this.last = performance.now();
     cancelAnimationFrame(this.raf);
     this.loop(this.last);
+  }
+
+  private playSfxDiff(bundle: RenderBundle): void {
+    const s = bundle.sfx;
+    if (!s) return;
+    const gun = bundle.player.activeSlot === 0 ? bundle.player.primary
+      : bundle.player.activeSlot === 1 ? bundle.player.secondary
+      : bundle.player.melee;
+    const cat = gun ? WEAPONS[gun.weaponId]?.category ?? "ar" : "ar";
+    for (let i = this.lastSfx.shots; i < s.shots; i++) this.audio.shoot(cat);
+    for (let i = this.lastSfx.hits; i < s.hits; i++) this.audio.hit(false);
+    for (let i = this.lastSfx.crits; i < s.crits; i++) this.audio.hit(true);
+    for (let i = this.lastSfx.loots; i < s.loots; i++) this.audio.loot();
+    for (let i = this.lastSfx.jumps; i < s.jumps; i++) this.audio.jump();
+    for (let i = this.lastSfx.zoneWarns; i < s.zoneWarns; i++) this.audio.zoneWarning();
+    for (let i = this.lastSfx.redZones; i < s.redZones; i++) this.audio.redZone();
+    for (let i = this.lastSfx.dryFires; i < s.dryFires; i++) this.audio.dryFire();
+    for (let i = this.lastSfx.reloads; i < s.reloads; i++) this.audio.reload();
+    if (s.damaged > this.lastSfx.damaged) {
+      this.audio.damaged();
+      this.damageFlash = 0.35;
+    }
+    this.lastSfx = { ...s };
   }
 
   private backToLobby(): void {
@@ -121,6 +188,7 @@ class GameApp {
     if (this.bundle) {
       this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY);
       this.syncHud(this.bundle);
+      this.drawDamageVignette(viewW, viewH, dt);
     }
     this.input.endFrame();
 
@@ -132,11 +200,25 @@ class GameApp {
     this.raf = requestAnimationFrame(this.loop);
   };
 
+  private drawDamageVignette(viewW: number, viewH: number, dt: number): void {
+    if (this.damageFlash <= 0) return;
+    this.damageFlash = Math.max(0, this.damageFlash - dt);
+    const a = Math.min(0.45, this.damageFlash * 1.2);
+    const ctx = this.ctx;
+    ctx.save();
+    const g = ctx.createRadialGradient(viewW / 2, viewH / 2, viewH * 0.25, viewW / 2, viewH / 2, viewH * 0.75);
+    g.addColorStop(0, "transparent");
+    g.addColorStop(1, `rgba(140, 30, 20, ${a})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, viewW, viewH);
+    ctx.restore();
+  }
+
   private syncHud(bundle: RenderBundle): void {
     $("alive-count").textContent = String(
       bundle.fighters.filter((f) => f.state !== "dead").length,
     );
-    $("phase-info").textContent = `PHASE ${bundle.zone.phaseIndex + 1}`;
+    $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
     const p = bundle.player;
     ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
     ($("boost-fill") as HTMLDivElement).style.width = `${Math.max(0, p.boost)}%`;
@@ -156,8 +238,10 @@ class GameApp {
       if (gun) {
         const def = WEAPONS[gun.weaponId];
         wName = def?.name ?? gun.weaponId;
-        if (def?.ammo) ammo = `${gun.ammoInMag} / ${p.ammo[def.ammo] ?? 0}`;
-        else ammo = "∞";
+        if (def?.ammo) {
+          ammo = `${gun.ammoInMag} / ${p.ammo[def.ammo] ?? 0}`;
+          if (p.reloadTimer > 0) ammo = `RELOADING…`;
+        } else ammo = "∞";
       }
     }
     $("weapon-name").textContent = wName;
@@ -170,7 +254,8 @@ class GameApp {
       drop.textContent = "JUMP · SPACE / F";
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
-      drop.textContent = "DEPLOY · SPACE";
+      const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
+      drop.textContent = `CUT CHUTE · SPACE  ·  ALT ${alt}%`;
     } else {
       drop.classList.add("hidden");
     }
@@ -179,7 +264,8 @@ class GameApp {
       .slice(0, 5)
       .map((k) => {
         const tag = k.knocked ? " knocked " : " ";
-        return `<div class="entry">${escapeHtml(k.killer)} [${escapeHtml(k.weapon)}]${tag}${escapeHtml(k.victim)}</div>`;
+        const you = k.killer === p.name || k.victim === p.name ? " you" : "";
+        return `<div class="entry${you}">${escapeHtml(k.killer)} [${escapeHtml(k.weapon)}]${tag}${escapeHtml(k.victim)}</div>`;
       })
       .join("");
   }
