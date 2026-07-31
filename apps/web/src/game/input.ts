@@ -9,9 +9,15 @@ export class Input {
   touchMove = { x: 0, y: 0 };
   touchFire = false;
   touchInteract = false;
+  /** Visible joystick state for HUD overlay */
+  stickVisible = false;
+  stickBase = { x: 0, y: 0 };
+  stickKnob = { x: 0, y: 0 };
+  fireBtnActive = false;
   private stickOrigin: { x: number; y: number } | null = null;
-  private stickTouchId: number | null = null;
-  private fireTouchId: number | null = null;
+  private stickPointerId: number | null = null;
+  private aimPointerId: number | null = null;
+  private usingTouch = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => {
@@ -26,15 +32,18 @@ export class Input {
       this.keys.delete(e.key.toLowerCase());
     });
     canvas.addEventListener("mousemove", (e) => {
+      if (this.usingTouch) return;
       const rect = canvas.getBoundingClientRect();
-      this.mouseX = ((e.clientX - rect.left) / rect.width) * rect.width;
-      this.mouseY = ((e.clientY - rect.top) / rect.height) * rect.height;
+      this.mouseX = e.clientX - rect.left;
+      this.mouseY = e.clientY - rect.top;
     });
     canvas.addEventListener("mousedown", (e) => {
+      if (this.usingTouch) return;
       if (e.button === 0) this.mouseDown = true;
       if (e.button === 2) this.mouseRight = true;
     });
     canvas.addEventListener("mouseup", (e) => {
+      if (this.usingTouch) return;
       if (e.button === 0) this.mouseDown = false;
       if (e.button === 2) this.mouseRight = false;
     });
@@ -43,69 +52,94 @@ export class Input {
       this.wheelDelta += e.deltaY;
     }, { passive: true });
 
-    canvas.addEventListener("touchstart", (e) => this.onTouchStart(e), { passive: false });
-    canvas.addEventListener("touchmove", (e) => this.onTouchMove(e), { passive: false });
-    canvas.addEventListener("touchend", (e) => this.onTouchEnd(e));
-    canvas.addEventListener("touchcancel", (e) => this.onTouchEnd(e));
+    // Pointer Events unify mouse + touch; we gate touch zones for mobile layout
+    canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
+    canvas.addEventListener("pointermove", (e) => this.onPointerMove(e));
+    canvas.addEventListener("pointerup", (e) => this.onPointerUp(e));
+    canvas.addEventListener("pointercancel", (e) => this.onPointerUp(e));
   }
 
-  private onTouchStart(e: TouchEvent): void {
+  get isTouchLayout(): boolean {
+    return this.usingTouch || matchMedia("(pointer: coarse)").matches;
+  }
+
+  private localPos(e: PointerEvent): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
-    for (const t of Array.from(e.changedTouches)) {
-      const x = t.clientX - rect.left;
-      const y = t.clientY - rect.top;
-      if (x < rect.width * 0.45 && this.stickTouchId === null) {
-        this.stickTouchId = t.identifier;
-        this.stickOrigin = { x, y };
-        e.preventDefault();
-      } else if (x > rect.width * 0.55 && this.fireTouchId === null) {
-        this.fireTouchId = t.identifier;
-        this.touchFire = true;
-        this.mouseDown = true;
-        this.mouseX = x;
-        this.mouseY = y;
-        e.preventDefault();
-      } else if (x > rect.width * 0.55 && y > rect.height * 0.55) {
-        this.touchInteract = true;
-        this.justPressed.add("f");
-      }
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  private onPointerDown(e: PointerEvent): void {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const isTouch = e.pointerType === "touch" || e.pointerType === "pen";
+    if (isTouch) this.usingTouch = true;
+
+    const { x, y } = this.localPos(e);
+    const rect = this.canvas.getBoundingClientRect();
+    const w = rect.width;
+
+    if (!isTouch) {
+      // Desktop mouse already handled via mouse listeners
+      return;
+    }
+
+    e.preventDefault();
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    // Left half: virtual stick. Right half: aim (FIRE is the HTML button).
+    if (x < w * 0.45 && this.stickPointerId === null) {
+      this.stickPointerId = e.pointerId;
+      this.stickOrigin = { x, y };
+      this.stickBase = { x, y };
+      this.stickKnob = { x, y };
+      this.stickVisible = true;
+      this.touchMove = { x: 0, y: 0 };
+      return;
+    }
+
+    if (x > w * 0.5 && this.aimPointerId === null) {
+      this.aimPointerId = e.pointerId;
+      this.mouseX = x;
+      this.mouseY = y;
     }
   }
 
-  private onTouchMove(e: TouchEvent): void {
-    const rect = this.canvas.getBoundingClientRect();
-    for (const t of Array.from(e.changedTouches)) {
-      const x = t.clientX - rect.left;
-      const y = t.clientY - rect.top;
-      if (t.identifier === this.fireTouchId) {
-        this.mouseX = x;
-        this.mouseY = y;
-        e.preventDefault();
-      }
-      if (t.identifier === this.stickTouchId && this.stickOrigin) {
-        const dx = x - this.stickOrigin.x;
-        const dy = y - this.stickOrigin.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const max = 56;
-        const mag = Math.min(1, len / max);
-        this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
-        e.preventDefault();
-      }
+  private onPointerMove(e: PointerEvent): void {
+    const { x, y } = this.localPos(e);
+
+    if (e.pointerId === this.aimPointerId) {
+      this.mouseX = x;
+      this.mouseY = y;
+      e.preventDefault();
+      return;
+    }
+
+    if (e.pointerId === this.stickPointerId && this.stickOrigin) {
+      const dx = x - this.stickOrigin.x;
+      const dy = y - this.stickOrigin.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const max = 56;
+      const mag = Math.min(1, len / max);
+      const kx = this.stickOrigin.x + (dx / len) * mag * max;
+      const ky = this.stickOrigin.y + (dy / len) * mag * max;
+      this.stickKnob = { x: kx, y: ky };
+      this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
+      e.preventDefault();
     }
   }
 
-  private onTouchEnd(e: TouchEvent): void {
-    for (const t of Array.from(e.changedTouches)) {
-      if (t.identifier === this.stickTouchId) {
-        this.stickTouchId = null;
-        this.stickOrigin = null;
-        this.touchMove = { x: 0, y: 0 };
-      }
-      if (t.identifier === this.fireTouchId) {
-        this.fireTouchId = null;
-        this.touchFire = false;
-        this.mouseDown = false;
-      }
+  private onPointerUp(e: PointerEvent): void {
+    if (e.pointerId === this.stickPointerId) {
+      this.stickPointerId = null;
+      this.stickOrigin = null;
+      this.touchMove = { x: 0, y: 0 };
+      this.stickVisible = false;
+    }
+    if (e.pointerId === this.aimPointerId) {
+      this.aimPointerId = null;
     }
     this.touchInteract = false;
   }

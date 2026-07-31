@@ -1,0 +1,28 @@
+{
+  "name": "Stick Royale",
+  "short_name": "Stick Royale",
+  "description": "Stick-figure battle royale — drop in, loot up, be the last stick standing.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a2218",
+  "theme_color": "#1a2218",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

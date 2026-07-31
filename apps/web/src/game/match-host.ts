@@ -7,11 +7,14 @@ import {
 } from "@stick-royale/sim";
 import type { GameInput } from "@stick-royale/sim";
 
+const PENDING_WATCHDOG_MS = 500;
+
 /** Runs MatchSim in a Web Worker when available; falls back to main thread */
 export class MatchHost {
   private worker: Worker | null = null;
   private sim: MatchSim | null = null;
   private pending = false;
+  private pendingSince = 0;
   /** Latest input waiting to be sent — never drop player intent */
   private queued: {
     dt: number;
@@ -32,25 +35,67 @@ export class MatchHost {
         type: "module",
       });
       this.worker.onmessage = (ev) => {
-        const msg = ev.data as { type: string; bundle: RenderBundle };
-        if (msg.type === "ready" || msg.type === "frame") {
+        const msg = ev.data as { type: string; bundle?: RenderBundle; error?: string };
+        if (msg.type === "error") {
+          // Worker recovered from a tick failure — clear pending so we don't freeze
+          console.error("[MatchHost] worker error:", msg.error);
+          this.clearPending();
+          this.flushQueue();
+          return;
+        }
+        if ((msg.type === "ready" || msg.type === "frame") && msg.bundle) {
           this.bundle = msg.bundle;
-          this.pending = false;
+          this.clearPending();
           this.onFrame(msg.bundle);
-          if (this.queued && this.worker) {
-            const q = this.queued;
-            this.queued = null;
-            this.pending = true;
-            this.worker.postMessage({ type: "tick", ...q });
-          }
+          this.flushQueue();
         }
       };
+      this.worker.onerror = (err) => {
+        // Uncaught worker crash: without this, pending stays true forever (frozen canvas)
+        console.error("[MatchHost] worker crashed:", err.message);
+        this.clearPending();
+        this.queued = null;
+      };
+      this.worker.onmessageerror = () => {
+        console.error("[MatchHost] worker message deserialization failed");
+        this.clearPending();
+        this.flushQueue();
+      };
+      // Mark pending until ready so early ticks queue instead of racing init
+      this.markPending();
       this.worker.postMessage({ type: "init", config });
     } else {
       this.sim = new MatchSim(config);
       this.bundle = this.sim.exportRenderBundle();
       this.onFrame(this.bundle);
     }
+  }
+
+  private markPending(): void {
+    this.pending = true;
+    this.pendingSince = performance.now();
+  }
+
+  private clearPending(): void {
+    this.pending = false;
+    this.pendingSince = 0;
+  }
+
+  private flushQueue(): void {
+    if (!this.queued || !this.worker) return;
+    const q = this.queued;
+    this.queued = null;
+    this.markPending();
+    this.worker.postMessage({ type: "tick", ...q });
+  }
+
+  /** If a tick never returns, clear pending so gameplay can continue */
+  private recoverIfStalled(): void {
+    if (!this.pending || !this.worker || this.pendingSince <= 0) return;
+    if (performance.now() - this.pendingSince < PENDING_WATCHDOG_MS) return;
+    console.warn("[MatchHost] pending watchdog — recovering stalled worker tick");
+    this.clearPending();
+    this.flushQueue();
   }
 
   tick(dt: number, input: GameInput, viewW: number, viewH: number): void {
@@ -61,6 +106,7 @@ export class MatchHost {
       return;
     }
     if (!this.worker) return;
+    this.recoverIfStalled();
     const snap = snapshotInput(input);
     if (this.pending) {
       // Overwrite queue with latest input; accumulate dt so sim doesn't starve
@@ -69,7 +115,7 @@ export class MatchHost {
       if (this.queued) this.queued.input = snap;
       return;
     }
-    this.pending = true;
+    this.markPending();
     this.worker.postMessage({
       type: "tick",
       dt,
@@ -84,6 +130,7 @@ export class MatchHost {
     this.worker = null;
     this.sim = null;
     this.queued = null;
+    this.clearPending();
   }
 
   get matchOver(): boolean {

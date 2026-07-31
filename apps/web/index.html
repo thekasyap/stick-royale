@@ -2,8 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a2218" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Stick Royale" />
+    <meta name="description" content="Stick-figure battle royale — drop in, loot up, be the last stick standing." />
     <title>Stick Royale</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -58,7 +68,7 @@
             </div>
 
             <button type="submit" class="cta" id="start-btn">DROP IN</button>
-            <p class="hint">WASD · Mouse aim · LMB shoot · RMB ADS · F loot · R reload · Q/C/Z/X heal · G ping · 1–4 slots</p>
+            <p class="hint" id="controls-hint">WASD · Mouse aim · LMB shoot · RMB ADS · F loot · R reload · Q/C/Z/X heal · G ping · 1–4 slots</p>
             <p class="hint subtle" id="party-hint"></p>
           </form>
         </div>
@@ -98,11 +108,30 @@
         </div>
         <div id="prompt" class="prompt"></div>
         <div id="drop-banner" class="drop-banner hidden">JUMP · SPACE / F</div>
+        <div id="mobile-tip" class="mobile-tip hidden">Left move · Right aim · Fire button · Loot</div>
+
+        <div id="touch-ui" class="touch-ui" aria-hidden="true">
+          <div class="stick-zone" id="stick-zone">
+            <div class="stick-base" id="stick-base">
+              <div class="stick-knob" id="stick-knob"></div>
+            </div>
+          </div>
+          <button type="button" id="fire-btn" class="fire-btn" aria-label="Fire">FIRE</button>
+        </div>
+
         <div id="mobile-controls" class="mobile-controls" aria-hidden="true">
-          <button type="button" data-key="r" class="mbtn">R</button>
-          <button type="button" data-key="f" class="mbtn">Loot</button>
-          <button type="button" data-ads class="mbtn">ADS</button>
-          <button type="button" data-key=" " class="mbtn">Jump</button>
+          <div class="mbtn-row heal-row">
+            <button type="button" data-key="q" class="mbtn heal">Band</button>
+            <button type="button" data-key="c" class="mbtn heal">Med</button>
+            <button type="button" data-key="z" class="mbtn heal">Drink</button>
+            <button type="button" data-key="x" class="mbtn heal">Pain</button>
+          </div>
+          <div class="mbtn-row action-row">
+            <button type="button" data-key="r" class="mbtn">Reload</button>
+            <button type="button" data-key="f" class="mbtn">Loot</button>
+            <button type="button" data-ads class="mbtn">ADS</button>
+            <button type="button" data-key=" " class="mbtn">Jump</button>
+          </div>
         </div>
       </div>
 

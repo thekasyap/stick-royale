@@ -22,6 +22,11 @@ export class GameAudio {
     this.enabled = on;
   }
 
+  /** Call on first user gesture (iOS / Chrome autoplay unlock) */
+  unlock(): void {
+    this.ensure();
+  }
+
   private tone(freq: number, dur: number, type: OscillatorType, gain = 0.08, when = 0): void {
     const ctx = this.ensure();
     if (!ctx) return;

@@ -10,6 +10,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
 const AUDIO_KEY = "stick_royale_audio";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -22,6 +23,22 @@ function ensureGuestId(): string {
 
 function $(id: string): HTMLElement {
   return document.getElementById(id)!;
+}
+
+function isTouchCapable(): boolean {
+  return (
+    matchMedia("(pointer: coarse)").matches ||
+    matchMedia("(hover: none)").matches ||
+    navigator.maxTouchPoints > 0
+  );
+}
+
+function vibrate(ms: number): void {
+  try {
+    navigator.vibrate?.(ms);
+  } catch {
+    /* ignore */
+  }
 }
 
 class GameApp {
@@ -37,21 +54,73 @@ class GameApp {
   private raf = 0;
   private last = 0;
   private running = false;
+  private paused = false;
+  private touchMode = false;
+  private mobileTipShown = false;
   private lastSfx = {
     shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
     zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
     kills: 0, nearbyShots: 0,
   };
   private damageFlash = 0;
+  private stickBaseEl = $("stick-base");
+  private stickKnobEl = $("stick-knob");
+  private fireBtn = $("fire-btn");
 
   constructor() {
     ensureGuestId();
+    this.detectTouch();
     this.bindLobby();
     this.bindMobileControls();
+    this.bindFireButton();
+    this.bindVisibility();
     this.resize();
     window.addEventListener("resize", () => this.resize());
     $("play-again").addEventListener("click", () => this.backToLobby());
     this.audio.setEnabled(localStorage.getItem(AUDIO_KEY) !== "0");
+  }
+
+  private detectTouch(): void {
+    if (isTouchCapable()) {
+      document.body.classList.add("touch-capable");
+      this.touchMode = true;
+      const hint = $("controls-hint");
+      hint.textContent =
+        "Left stick move · Right drag aim · FIRE to shoot · Loot / Reload / Heal buttons";
+    }
+  }
+
+  private bindVisibility(): void {
+    document.addEventListener("visibilitychange", () => {
+      if (!this.running) return;
+      if (document.hidden) {
+        this.paused = true;
+      } else {
+        this.paused = false;
+        this.last = performance.now();
+      }
+    });
+  }
+
+  private bindFireButton(): void {
+    const down = (e: Event) => {
+      e.preventDefault();
+      this.audio.unlock();
+      this.input.mouseDown = true;
+      this.input.touchFire = true;
+      this.input.fireBtnActive = true;
+      this.fireBtn.classList.add("active");
+    };
+    const up = () => {
+      this.input.mouseDown = false;
+      this.input.touchFire = false;
+      this.input.fireBtnActive = false;
+      this.fireBtn.classList.remove("active");
+    };
+    this.fireBtn.addEventListener("pointerdown", down);
+    this.fireBtn.addEventListener("pointerup", up);
+    this.fireBtn.addEventListener("pointercancel", up);
+    this.fireBtn.addEventListener("pointerleave", up);
   }
 
   private bindMobileControls(): void {
@@ -60,18 +129,20 @@ class GameApp {
       const key = (btn as HTMLElement).dataset.key!;
       const press = (e: Event) => {
         e.preventDefault();
+        this.audio.unlock();
         this.input.injectPress(key);
       };
       const release = () => this.input.injectRelease(key);
-      btn.addEventListener("touchstart", press, { passive: false });
-      btn.addEventListener("touchend", release);
-      btn.addEventListener("mousedown", press);
-      btn.addEventListener("mouseup", release);
+      btn.addEventListener("pointerdown", press);
+      btn.addEventListener("pointerup", release);
+      btn.addEventListener("pointercancel", release);
+      btn.addEventListener("pointerleave", release);
     });
     const ads = root.querySelector("[data-ads]");
     if (ads) {
       const down = (e: Event) => {
         e.preventDefault();
+        this.audio.unlock();
         this.input.mouseRight = true;
         ads.classList.add("active");
       };
@@ -79,10 +150,10 @@ class GameApp {
         this.input.mouseRight = false;
         ads.classList.remove("active");
       };
-      ads.addEventListener("touchstart", down, { passive: false });
-      ads.addEventListener("touchend", up);
-      ads.addEventListener("mousedown", down);
-      ads.addEventListener("mouseup", up);
+      ads.addEventListener("pointerdown", down);
+      ads.addEventListener("pointerup", up);
+      ads.addEventListener("pointercancel", up);
+      ads.addEventListener("pointerleave", up);
     }
   }
 
@@ -96,6 +167,7 @@ class GameApp {
 
     $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      this.audio.unlock();
       const nickname = nick.value.trim().slice(0, 16) || "StickHero";
       localStorage.setItem(NICK_KEY, nickname);
       const mode = ($("mode") as HTMLSelectElement).value as GameMode;
@@ -129,21 +201,45 @@ class GameApp {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
+    document.body.classList.add("playing");
+    if (this.touchMode) {
+      document.body.classList.add("touch-mode");
+      this.maybeShowMobileTip();
+    }
     this.lastSfx = {
       shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
       zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
       kills: 0, nearbyShots: 0,
     };
     this.damageFlash = 0;
+    this.host?.destroy();
     this.host = new MatchHost((bundle) => {
       this.playSfxDiff(bundle);
       this.bundle = bundle;
     });
     this.host.start(config);
     this.running = true;
+    this.paused = false;
     this.last = performance.now();
     cancelAnimationFrame(this.raf);
     this.loop(this.last);
+  }
+
+  private maybeShowMobileTip(): void {
+    const tip = $("mobile-tip");
+    if (localStorage.getItem(MOBILE_TIP_KEY) === "1") {
+      tip.classList.add("hidden");
+      return;
+    }
+    tip.classList.remove("hidden");
+    this.mobileTipShown = true;
+  }
+
+  private dismissMobileTip(): void {
+    if (!this.mobileTipShown) return;
+    this.mobileTipShown = false;
+    $("mobile-tip").classList.add("hidden");
+    localStorage.setItem(MOBILE_TIP_KEY, "1");
   }
 
   private playSfxDiff(bundle: RenderBundle): void {
@@ -163,10 +259,14 @@ class GameApp {
     for (let i = this.lastSfx.dryFires; i < s.dryFires; i++) this.audio.dryFire();
     for (let i = this.lastSfx.reloads; i < s.reloads; i++) this.audio.reload();
     for (let i = this.lastSfx.nearbyShots; i < (s.nearbyShots ?? 0); i++) this.audio.shoot("ar");
-    for (let i = this.lastSfx.kills; i < (s.kills ?? 0); i++) this.audio.hit(true);
+    for (let i = this.lastSfx.kills; i < (s.kills ?? 0); i++) {
+      this.audio.hit(true);
+      vibrate(40);
+    }
     if (s.damaged > this.lastSfx.damaged) {
       this.audio.damaged();
       this.damageFlash = 0.35;
+      vibrate(25);
     }
     this.lastSfx = {
       shots: s.shots, hits: s.hits, crits: s.crits, loots: s.loots, jumps: s.jumps,
@@ -175,12 +275,43 @@ class GameApp {
     };
   }
 
+  private syncTouchOverlay(): void {
+    if (!this.touchMode) return;
+    const max = 40;
+    if (this.input.stickVisible) {
+      this.stickBaseEl.classList.add("active");
+      const dx = this.input.stickKnob.x - this.input.stickBase.x;
+      const dy = this.input.stickKnob.y - this.input.stickBase.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const mag = Math.min(max, len);
+      const ox = (dx / len) * mag;
+      const oy = (dy / len) * mag;
+      this.stickKnobEl.style.transform = `translate(${ox}px, ${oy}px)`;
+      // Move base toward finger origin when dynamic stick is active
+      const zone = $("stick-zone");
+      const rect = zone.getBoundingClientRect();
+      const localX = this.input.stickBase.x - rect.left;
+      const localY = this.input.stickBase.y - rect.top;
+      this.stickBaseEl.style.left = `${Math.max(0, Math.min(rect.width - 84, localX - 42))}px`;
+      this.stickBaseEl.style.top = `${Math.max(0, Math.min(rect.height - 84, localY - 42))}px`;
+    } else {
+      this.stickBaseEl.classList.remove("active");
+      this.stickKnobEl.style.transform = "translate(0, 0)";
+      this.stickBaseEl.style.left = "28px";
+      this.stickBaseEl.style.top = "28px";
+    }
+    this.fireBtn.classList.toggle("active", this.input.fireBtnActive);
+  }
+
   private backToLobby(): void {
     this.running = false;
+    this.paused = false;
     this.host?.destroy();
     this.host = null;
     this.bundle = null;
     cancelAnimationFrame(this.raf);
+    document.body.classList.remove("playing", "touch-mode");
+    $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
     $("lobby").classList.remove("hidden");
@@ -188,6 +319,13 @@ class GameApp {
 
   private loop = (now: number): void => {
     if (!this.running || !this.host) return;
+
+    if (this.paused || document.hidden) {
+      this.last = now;
+      this.raf = requestAnimationFrame(this.loop);
+      return;
+    }
+
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     const viewW = window.innerWidth;
@@ -197,7 +335,14 @@ class GameApp {
       this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY);
       this.syncHud(this.bundle);
       this.drawDamageVignette(viewW, viewH, dt);
+      if (
+        this.mobileTipShown &&
+        (this.bundle.player.state === "parachute" || this.bundle.player.state === "alive")
+      ) {
+        this.dismissMobileTip();
+      }
     }
+    this.syncTouchOverlay();
     this.input.endFrame();
 
     if (this.host.matchOver && this.host.result) {
@@ -273,11 +418,13 @@ class GameApp {
     const drop = $("drop-banner");
     if (p.state === "plane") {
       drop.classList.remove("hidden");
-      drop.textContent = "JUMP · SPACE / F";
+      drop.textContent = this.touchMode ? "JUMP · TAP JUMP / LOOT" : "JUMP · SPACE / F";
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
       const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
-      drop.textContent = `CUT CHUTE · SPACE  ·  ALT ${alt}%`;
+      drop.textContent = this.touchMode
+        ? `CUT CHUTE · JUMP  ·  ALT ${alt}%`
+        : `CUT CHUTE · SPACE  ·  ALT ${alt}%`;
     } else {
       drop.classList.add("hidden");
     }
@@ -305,6 +452,12 @@ class GameApp {
     if (r.winner) this.audio.chickenDinner();
     else this.audio.eliminated();
     this.running = false;
+    this.paused = false;
+    // Stop worker so results screen doesn't keep simulating
+    this.host?.destroy();
+    this.host = null;
+    cancelAnimationFrame(this.raf);
+    document.body.classList.remove("playing");
   }
 }
 

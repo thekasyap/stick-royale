@@ -31,6 +31,8 @@ export function angleTo(from: Vec2, to: Vec2): number {
 
 export function angleDiff(a: number, b: number): number {
   let d = b - a;
+  // Guard NaN/±Infinity — bare while loops hang forever on non-finite d
+  if (!Number.isFinite(d)) return 0;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
   return d;
