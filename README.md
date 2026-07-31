@@ -52,17 +52,18 @@ Open [http://localhost:5173](http://localhost:5173).
 ## Monorepo
 
 ```
-apps/web/          Vite + TypeScript + Canvas 2D (offline sim + UI)
+apps/web/          Vite + TypeScript + Canvas 2D (client + Web Worker sim)
 apps/server/       Cloudflare Worker + Lobby / MatchRoom Durable Objects
 packages/shared/   Weapons, zone phases, POIs, protocol types
+packages/sim/      MatchSim — authoritative 20 Hz sim (worker + DO)
 ```
 
 | Script | What |
 |--------|------|
-| `npm run dev` | Web client |
-| `npm run build` | Production web build |
-| `npm run dev:server` | Wrangler local DO server |
-| `npm run typecheck` | TypeScript check |
+| `pnpm dev` | Web client |
+| `pnpm build` | Production web build |
+| `pnpm dev:server` | Wrangler local DO server |
+| `pnpm typecheck` | TypeScript check all packages |
 
 ## Deploy
 

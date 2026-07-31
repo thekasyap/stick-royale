@@ -62,10 +62,15 @@ class GameApp {
       const mode = ($("mode") as HTMLSelectElement).value as GameMode;
       const partySize = ($("party-size") as HTMLSelectElement).value as PartySize;
       const difficulty = ($("difficulty") as HTMLSelectElement).value as BotDifficulty;
-      if (!($("party-code") as HTMLInputElement).value.trim() && partyHostAvailable()) {
+      const partyCode = ($("party-code") as HTMLInputElement).value.trim().toUpperCase();
+
+      if (!partyCode && partyHostAvailable()) {
         const created = await createParty(nickname);
-        if (created) ($("party-code") as HTMLInputElement).value = created.code;
+        if (created) {
+          ($("party-code") as HTMLInputElement).value = created.code;
+        }
       }
+
       this.startMatch({ nickname, mode, partySize, difficulty });
     });
   }
@@ -166,7 +171,9 @@ class GameApp {
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
       drop.textContent = "DEPLOY · SPACE";
-    } else drop.classList.add("hidden");
+    } else {
+      drop.classList.add("hidden");
+    }
 
     $("kill-feed").innerHTML = bundle.killFeed
       .slice(0, 5)
