@@ -9,7 +9,7 @@ import {
 } from "@stick-royale/shared";
 import { activeWeapon, startHeal, tryPickup, type Fighter } from "./fighter";
 import { hasLos, startReload, tryFire, type Bullet, type FragNade, type MeleeSwing, type SmokeCloud } from "./combat";
-import type { IslandMap, LootPile } from "./mapgen";
+import type { IslandMap, LootKind, LootPile } from "./mapgen";
 import { angleDiff, angleTo, clamp, createRng, dist, moveTowardAngle, normalize, pick } from "./math";
 import type { ZoneState } from "./zone";
 import { outsideBlue } from "./zone";
@@ -235,13 +235,24 @@ function botLoot(
   moveBot(bot, pile, PLAYER_SPEED, dt);
   bot.aim = angleTo(bot, pile);
   if (dist(bot, pile) < 36) {
+    // Never push replaced gear back into the same pile — weapon A↔B swaps
+    // would loop forever and hang the match worker (MatchHost pending stuck).
+    const dropped: LootKind[] = [];
     while (pile.items.length > 0) {
       const item = pile.items[0]!;
       const res = tryPickup(bot, item);
       if (res.ok) {
         pile.items.shift();
-        if (res.dropped) pile.items.push(res.dropped);
+        if (res.dropped) dropped.push(res.dropped);
       } else break;
+    }
+    if (dropped.length > 0) {
+      map.loot.push({
+        id: `botdrop_${bot.id}_${Math.floor(bot.x)}_${Math.floor(bot.y)}_${dropped.length}`,
+        x: bot.x + (rng() - 0.5) * 18,
+        y: bot.y + (rng() - 0.5) * 18,
+        items: dropped,
+      });
     }
     if (pile.items.length === 0) bot.lootTargetId = null;
   }

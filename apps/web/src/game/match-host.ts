@@ -32,25 +32,48 @@ export class MatchHost {
         type: "module",
       });
       this.worker.onmessage = (ev) => {
-        const msg = ev.data as { type: string; bundle: RenderBundle };
-        if (msg.type === "ready" || msg.type === "frame") {
+        const msg = ev.data as { type: string; bundle?: RenderBundle; error?: string };
+        if (msg.type === "error") {
+          // Worker recovered from a tick failure — clear pending so we don't freeze
+          console.error("[MatchHost] worker error:", msg.error);
+          this.pending = false;
+          this.flushQueue();
+          return;
+        }
+        if ((msg.type === "ready" || msg.type === "frame") && msg.bundle) {
           this.bundle = msg.bundle;
           this.pending = false;
           this.onFrame(msg.bundle);
-          if (this.queued && this.worker) {
-            const q = this.queued;
-            this.queued = null;
-            this.pending = true;
-            this.worker.postMessage({ type: "tick", ...q });
-          }
+          this.flushQueue();
         }
       };
+      this.worker.onerror = (err) => {
+        // Uncaught worker crash: without this, pending stays true forever (frozen canvas)
+        console.error("[MatchHost] worker crashed:", err.message);
+        this.pending = false;
+        this.queued = null;
+      };
+      this.worker.onmessageerror = () => {
+        console.error("[MatchHost] worker message deserialization failed");
+        this.pending = false;
+        this.flushQueue();
+      };
+      // Mark pending until ready so early ticks queue instead of racing init
+      this.pending = true;
       this.worker.postMessage({ type: "init", config });
     } else {
       this.sim = new MatchSim(config);
       this.bundle = this.sim.exportRenderBundle();
       this.onFrame(this.bundle);
     }
+  }
+
+  private flushQueue(): void {
+    if (!this.queued || !this.worker) return;
+    const q = this.queued;
+    this.queued = null;
+    this.pending = true;
+    this.worker.postMessage({ type: "tick", ...q });
   }
 
   tick(dt: number, input: GameInput, viewW: number, viewH: number): void {
@@ -84,6 +107,7 @@ export class MatchHost {
     this.worker = null;
     this.sim = null;
     this.queued = null;
+    this.pending = false;
   }
 
   get matchOver(): boolean {
