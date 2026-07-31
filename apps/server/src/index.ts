@@ -23,6 +23,12 @@ export default {
       return stub.fetch(request);
     }
 
+    if (url.pathname === "/ws/lobby" && request.headers.get("Upgrade") === "websocket") {
+      const id = env.LOBBY.idFromName("global");
+      const stub = env.LOBBY.get(id);
+      return stub.fetch(request);
+    }
+
     if (url.pathname.startsWith("/ws/match/")) {
       const matchId = url.pathname.split("/").pop() || "default";
       const id = env.MATCH_ROOM.idFromName(matchId);

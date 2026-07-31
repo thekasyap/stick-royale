@@ -1,15 +1,20 @@
 import {
   ARMOR,
   ATTACHMENTS,
+  CRAWL_SPEED,
   HEALS,
+  KNOCK_BLEED_DPS,
   MAX_BOOST,
   MAX_HP,
   PLAYER_RADIUS,
+  REVIVE_RANGE,
+  REVIVE_TIME,
   STARTER_MELEE,
   STARTER_WEAPON,
   WEAPONS,
   type AmmoType,
   type BotDifficulty,
+  type PartySize,
   type Vec2,
 } from "@stick-royale/shared";
 import type { LootKind } from "./mapgen";
@@ -65,7 +70,23 @@ export type Fighter = {
   lootTargetId?: string | null;
   rotateTarget?: Vec2 | null;
   dropTarget?: Vec2 | null;
+  vehicleId?: string | null;
+  reviveTargetId?: string | null;
+  reviveTimer?: number;
+  animPhase?: number;
 };
+
+export function teamSizeCapacity(size: PartySize): number {
+  if (size === "duo") return 2;
+  if (size === "squad") return 4;
+  return 1;
+}
+
+export function hasAliveTeammate(f: Fighter, fighters: Fighter[]): boolean {
+  return fighters.some(
+    (o) => o.id !== f.id && o.teamId === f.teamId && o.state === "alive",
+  );
+}
 
 export function createFighter(
   id: string,
@@ -126,6 +147,10 @@ export function createFighter(
     lootTargetId: null,
     rotateTarget: null,
     dropTarget: null,
+    vehicleId: null,
+    reviveTargetId: null,
+    reviveTimer: 0,
+    animPhase: Math.random() * Math.PI * 2,
   };
 }
 
@@ -172,8 +197,13 @@ export function armorReduction(f: Fighter, headshot: boolean): number {
   return 0;
 }
 
-export function applyDamage(f: Fighter, raw: number, headshot: boolean): number {
-  if (f.state === "dead" || f.state === "plane") return 0;
+export function applyDamage(
+  f: Fighter,
+  raw: number,
+  headshot: boolean,
+  opts?: { allowKnock?: boolean; teammates?: Fighter[] },
+): number {
+  if (f.state === "dead" || f.state === "plane" || f.state === "parachute") return 0;
   if (f.invuln > 0) return 0;
   const red = armorReduction(f, headshot);
   const dmg = Math.max(1, Math.round(raw * (1 - red)));
@@ -183,10 +213,77 @@ export function applyDamage(f: Fighter, raw: number, headshot: boolean): number 
     f.healItem = null;
   }
   if (f.hp <= 0) {
-    f.hp = 0;
-    f.state = "dead";
+    const canKnock =
+      opts?.allowKnock &&
+      f.state === "alive" &&
+      opts.teammates &&
+      hasAliveTeammate(f, opts.teammates);
+    if (canKnock) {
+      f.state = "downed";
+      f.hp = 45;
+      f.vehicleId = null;
+    } else {
+      f.hp = 0;
+      f.state = "dead";
+    }
   }
   return dmg;
+}
+
+export function tickDowned(f: Fighter, dt: number, teammates: Fighter[]): boolean {
+  if (f.state !== "downed") return false;
+  f.hp -= KNOCK_BLEED_DPS * dt;
+  if (f.hp <= 0) {
+    f.hp = 0;
+    f.state = "dead";
+    return true;
+  }
+  void teammates;
+  return false;
+}
+
+export function tickRevive(
+  medic: Fighter,
+  fighters: Fighter[],
+  dt: number,
+  holding: boolean,
+): Fighter | null {
+  if (!holding || medic.state !== "alive" || medic.vehicleId) {
+    medic.reviveTargetId = null;
+    medic.reviveTimer = 0;
+    return null;
+  }
+  let target: Fighter | null = null;
+  for (const o of fighters) {
+    if (o.teamId !== medic.teamId || o.state !== "downed") continue;
+    const d = Math.hypot(medic.x - o.x, medic.y - o.y);
+    if (d <= REVIVE_RANGE) {
+      target = o;
+      break;
+    }
+  }
+  if (!target) {
+    medic.reviveTargetId = null;
+    medic.reviveTimer = 0;
+    return null;
+  }
+  if (medic.reviveTargetId !== target.id) {
+    medic.reviveTargetId = target.id;
+    medic.reviveTimer = REVIVE_TIME;
+  }
+  medic.reviveTimer = (medic.reviveTimer ?? REVIVE_TIME) - dt;
+  if (medic.reviveTimer <= 0) {
+    target.state = "alive";
+    target.hp = 35;
+    medic.reviveTargetId = null;
+    medic.reviveTimer = 0;
+    return target;
+  }
+  return null;
+}
+
+export function crawlSpeed(f: Fighter): number {
+  return f.state === "downed" ? CRAWL_SPEED : 0;
 }
 
 export function backpackCap(f: Fighter): number {
