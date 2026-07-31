@@ -58,7 +58,15 @@ import { createZone, outsideBlue, updateZone, zonePhaseLabel, type ZoneState } f
 import { tickReload } from "./combat";
 
 export type KillFeedEntry = { killer: string; victim: string; weapon: string; t: number; knocked?: boolean };
-export type HitMarker = { x: number; y: number; text: string; life: number; crit: boolean };
+export type HitMarker = {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  crit: boolean;
+  headshot?: boolean;
+  kill?: boolean;
+};
 
 export type MatchConfig = {
   nickname: string;
@@ -115,8 +123,11 @@ export class World {
     dryFires: 0,
     reloads: 0,
     damaged: 0,
+    kills: 0,
+    nearbyShots: 0,
   };
   damageDir = 0;
+  killToast: { name: string; until: number } | null = null;
   private deathOrder: string[] = [];
   private startedAt = 0;
   private nowMs: () => number;
@@ -248,10 +259,11 @@ export class World {
         const nearPlayer = dist(f, this.player) < 520;
         if (nearPlayer || (i + frame) % botStride === 0) {
           const botDt = nearPlayer ? dt : dt * botStride;
-          updateBot(
+          const fired = updateBot(
             f, this.fighters, this.map, this.zone, botDt, this.time,
             this.bullets, this.melees, this.frags, this.smokes, this.rng,
           );
+          if (fired && dist(f, this.player) < 720) this.sfx.nearbyShots += 1;
         }
       }
 
@@ -267,6 +279,7 @@ export class World {
           tickBoost(f, dt);
           if (f.aimPunch > 0) f.aimPunch = Math.max(0, f.aimPunch - dt * 1.8);
         }
+        if (f.hitFlash > 0) f.hitFlash = Math.max(0, f.hitFlash - dt);
         if (f.fireCooldown > 0) f.fireCooldown -= dt;
         if (f.invuln > 0) f.invuln -= dt;
 
@@ -304,18 +317,20 @@ export class World {
       }
     }
 
-    const onHit = (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => {
+    const onHit = (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string, headshot = false) => {
       if (attacker.id === this.player.id || victim.id === this.player.id) {
         this.hitMarkers.push({
           x: victim.x + (this.rng() - 0.5) * 20,
           y: victim.y - 28,
-          text: String(Math.round(dmg)),
-          life: 0.7,
-          crit: dmg >= 40,
+          text: headshot ? `${Math.round(dmg)}!` : String(Math.round(dmg)),
+          life: 0.85,
+          crit: headshot || dmg >= 35,
+          headshot,
+          kill: victim.state === "dead",
         });
         if (attacker.id === this.player.id) {
           this.sfx.hits += 1;
-          if (dmg >= 40) this.sfx.crits += 1;
+          if (headshot || dmg >= 35) this.sfx.crits += 1;
         }
         if (victim.id === this.player.id) {
           this.sfx.damaged += 1;
@@ -331,16 +346,16 @@ export class World {
     };
 
     const knock = this.allowKnock;
-    updateBullets(this.bullets, this.fighters, this.map.buildings, this.map.cover, dt, (a, v, d, w) => {
-      onHit(a, v, d, w);
+    updateBullets(this.bullets, this.fighters, this.map.buildings, this.map.cover, dt, (a, v, d, w, hs) => {
+      onHit(a, v, d, w, hs);
       if (v.state === "dead") this.handleKill(a, v, w);
     }, knock);
     updateMelees(this.melees, this.fighters, dt, (a, v, d, w) => {
-      onHit(a, v, d, w);
+      onHit(a, v, d, w, false);
       if (v.state === "dead") this.handleKill(a, v, w);
     }, knock);
     updateFrags(this.frags, this.fighters, dt, (a, v, d, w) => {
-      onHit(a, v, d, w);
+      onHit(a, v, d, w, false);
       if (v.state === "dead") this.handleKill(a, v, w);
     }, knock);
     updateSmokes(this.smokes, dt);
@@ -546,8 +561,20 @@ export class World {
         this.carePackages = this.carePackages.filter((c) => c.items.length > 0 || !c.landed);
       }
     } else if (near && !downedMate) {
+      const top = near.items[0]!;
+      let compare = "";
+      if (top.type === "weapon") {
+        const incoming = WEAPONS[top.weaponId];
+        const cur = p.primary ? WEAPONS[p.primary.weaponId] : null;
+        if (incoming && cur && incoming.slot === "primary") {
+          compare = ` · replace ${cur.name} (${cur.damage}dmg) → ${incoming.name} (${incoming.damage}dmg)`;
+        } else if (incoming) {
+          compare = ` · ${incoming.category.toUpperCase()} ${incoming.damage}dmg`;
+        }
+      }
+      const who = near.fromCrate && near.ownerName ? `${near.ownerName}'s crate · ` : "";
       const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
-      this.prompt = `F — ${labels}`;
+      this.prompt = `F — ${who}${labels}${compare}`;
       if (input.pressed("f") || input.pressed("e")) {
         const before = near.items.length;
         this.pickupLoot(p, near);
@@ -635,6 +662,10 @@ export class World {
     this.deathOrder.push(victim.id);
     attacker.kills += 1;
     this.pushFeed(attacker, victim, weaponId, false);
+    if (attacker.id === this.player.id) {
+      this.sfx.kills += 1;
+      this.killToast = { name: victim.name, until: this.time + 2.2 };
+    }
     this.spawnDeathCrate(victim);
     if (victim.vehicleId) {
       const v = this.vehicles.find((x) => x.id === victim.vehicleId);
@@ -651,6 +682,10 @@ export class World {
     if (attacker) {
       attacker.kills += 1;
       this.pushFeed(attacker, victim, weaponId, false);
+      if (attacker.id === this.player.id) {
+        this.sfx.kills += 1;
+        this.killToast = { name: victim.name, until: this.time + 2.2 };
+      }
     } else {
       this.killFeed.unshift({
         killer: weaponId === "zone" ? "Blue Zone" : weaponId === "redzone" ? "Red Zone" : "World",
@@ -670,7 +705,7 @@ export class World {
       items.push({ type: "weapon", weaponId: victim.secondary.weaponId });
     }
     for (const [ammo, amount] of Object.entries(victim.ammo)) {
-      if (amount > 0) {
+      if (amount && amount > 0) {
         items.push({
           type: "ammo",
           ammo: ammo as "556",
@@ -678,8 +713,16 @@ export class World {
         });
       }
     }
+    for (const [healId, amount] of Object.entries(victim.heals)) {
+      if (amount && amount > 0) {
+        items.push({ type: "heal", healId: healId as "bandage", amount: Math.min(5, amount) });
+      }
+    }
+    if (victim.frags > 0) items.push({ type: "throwable", weaponId: "frag", amount: victim.frags });
+    if (victim.smokes > 0) items.push({ type: "throwable", weaponId: "smoke", amount: victim.smokes });
     if (victim.helmet > 0) items.push({ type: "armor", armorId: `helmet_${victim.helmet}` as "helmet_1" });
     if (victim.vest > 0) items.push({ type: "armor", armorId: `vest_${victim.vest}` as "vest_1" });
+    if (victim.backpack > 0) items.push({ type: "armor", armorId: `backpack_${victim.backpack}` as "backpack_1" });
     if (items.length === 0) return;
     this.map.loot.push({
       id: `crate_${victim.id}_${this.time}`,
@@ -687,6 +730,7 @@ export class World {
       y: victim.y,
       items,
       fromCrate: true,
+      ownerName: victim.name,
     });
   }
 
@@ -818,6 +862,7 @@ export class World {
       damageDir: this.damageDir,
       phaseLabel: zonePhaseLabel(this.zone),
       zoneStarted: this.zoneStarted,
+      killToast: this.killToast && this.killToast.until > this.time ? this.killToast : null,
     };
   }
 }

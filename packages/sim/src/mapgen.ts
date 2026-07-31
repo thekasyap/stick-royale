@@ -43,6 +43,7 @@ export type LootPile = {
   y: number;
   items: LootKind[];
   fromCrate?: boolean;
+  ownerName?: string;
 };
 
 export type IslandMap = {

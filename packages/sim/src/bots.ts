@@ -74,8 +74,8 @@ export function updateBot(
   frags: FragNade[],
   smokes: SmokeCloud[],
   rng: () => number,
-): void {
-  if (bot.state === "dead") return;
+): boolean {
+  if (bot.state === "dead") return false;
   const diff = bot.difficulty ?? "easy";
   const profile = PROFILES[diff];
 
@@ -95,7 +95,7 @@ export function updateBot(
       bot.botTimer = 0;
       bot.botState = "drop";
     }
-    return;
+    return false;
   }
 
   if (bot.state === "parachute") {
@@ -109,10 +109,10 @@ export function updateBot(
       bot.botState = "loot";
       bot.invuln = 0.5;
     }
-    return;
+    return false;
   }
 
-  if (bot.state !== "alive") return;
+  if (bot.state !== "alive") return false;
 
   // cancel heal if threatened later
   const enemy = findThreat(bot, fighters, map, profile.engageRange * 1.2);
@@ -149,8 +149,7 @@ export function updateBot(
       botRotate(bot, zone, dt);
       break;
     case "engage":
-      botEngage(bot, enemy, map, profile, dt, time, bullets, melees, frags, smokes, rng);
-      break;
+      return botEngage(bot, enemy, map, profile, dt, time, bullets, melees, frags, smokes, rng);
     case "flee":
       botFlee(bot, enemy, zone, dt);
       break;
@@ -164,6 +163,7 @@ export function updateBot(
 
   // prefer primary if owned
   if (bot.primary && bot.activeSlot === 1) bot.activeSlot = 0;
+  return false;
 }
 
 function findThreat(
@@ -286,10 +286,10 @@ function botEngage(
   frags: FragNade[],
   smokes: SmokeCloud[],
   rng: () => number,
-): void {
+): boolean {
   if (!enemy) {
     bot.botState = "loot";
-    return;
+    return false;
   }
 
   const d = dist(bot, enemy);
@@ -308,21 +308,24 @@ function botEngage(
   bot.y += dir.y * speed * dt;
 
   // reaction gate
-  if (time < (bot.botReactUntil ?? 0)) return;
-  if (Math.abs(angleDiff(bot.aim, desired)) > 0.35) return;
+  if (time < (bot.botReactUntil ?? 0)) return false;
+  if (Math.abs(angleDiff(bot.aim, desired)) > 0.35) return false;
 
   // refresh aim error
   if (rng() < 0.05) bot.botAimError = (rng() - 0.5) * profile.aimError * 2;
 
   const gun = activeWeapon(bot);
+  if (gun && gun.ammoInMag === 0) startReload(bot);
   const def = gun ? WEAPONS[gun.weaponId] : null;
   const maxRange = def?.range ?? 200;
   if (d < maxRange * 0.95 && hasLos(bot, enemy, map.buildings, map.cover)) {
     if (rng() < profile.accuracy * dt * 8) {
-      tryFire(bot, true, false, bullets, melees, frags, smokes, rng);
+      const fired = tryFire(bot, true, false, bullets, melees, frags, smokes, rng);
       bot.botReactUntil = time + profile.reaction * (0.5 + rng());
+      return fired;
     }
   }
+  return false;
 }
 
 function botFlee(bot: Fighter, enemy: Fighter | null, zone: ZoneState, dt: number): void {

@@ -64,17 +64,91 @@ export class Renderer {
 
     ctx.restore();
     this.drawCrosshair(mouseX, mouseY, world);
+    this.drawDamageChevron(world, w, h);
+    this.drawCompass(world, w);
+    this.drawKillToast(world, w);
     this.drawMinimap(world);
+  }
+
+  private drawDamageChevron(world: RenderBundle, viewW: number, viewH: number): void {
+    if ((world.player.hitFlash ?? 0) <= 0 && (world.sfx?.damaged ?? 0) <= 0) return;
+    // Show while player is flashing from damage
+    if ((world.player.hitFlash ?? 0) <= 0) return;
+    const { ctx } = this;
+    const dir = world.damageDir ?? 0;
+    const cx = viewW / 2;
+    const cy = viewH / 2;
+    const r = Math.min(viewW, viewH) * 0.28;
+    const x = cx + Math.cos(dir) * r;
+    const y = cy + Math.sin(dir) * r;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (world.player.hitFlash ?? 0) * 8);
+    ctx.translate(x, y);
+    ctx.rotate(dir);
+    ctx.fillStyle = "rgba(200, 50, 40, 0.85)";
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -10);
+    ctx.lineTo(-8, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private drawCompass(world: RenderBundle, viewW: number): void {
+    if (world.player.state === "plane") return;
+    const { ctx } = this;
+    const cx = viewW / 2;
+    const y = 28;
+    const facing = world.player.aim;
+    const labels = ["N", "E", "S", "W"];
+    ctx.save();
+    ctx.font = "700 11px 'IBM Plex Sans'";
+    ctx.textAlign = "center";
+    for (let i = 0; i < 4; i++) {
+      const ang = -Math.PI / 2 + (i * Math.PI) / 2 - facing;
+      const x = cx + Math.sin(ang) * 70;
+      const alpha = 0.35 + 0.55 * Math.max(0, Math.cos(ang));
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = i === 0 ? "#d4a04a" : "#f0e8d8";
+      ctx.fillText(labels[i]!, x, y);
+    }
+    // Zone bearing tick
+    const zx = world.zone.white.x - world.player.x;
+    const zy = world.zone.white.y - world.player.y;
+    const zAng = Math.atan2(zy, zx) - facing;
+    const zxScreen = cx + Math.sin(zAng) * 70;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = "#6a9ecf";
+    ctx.fillRect(zxScreen - 2, y + 6, 4, 4);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  private drawKillToast(world: RenderBundle, viewW: number): void {
+    const toast = world.killToast;
+    if (!toast) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = "700 22px 'Bebas Neue', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(212, 160, 74, 0.95)";
+    ctx.fillText(`ELIMINATED  ${toast.name.toUpperCase()}`, viewW / 2, 72);
+    ctx.restore();
   }
 
   private drawHitMarkers(world: RenderBundle): void {
     const { ctx } = this;
     for (const m of world.hitMarkers) {
       ctx.globalAlpha = Math.min(1, m.life * 2);
-      ctx.fillStyle = m.crit ? "#d4a04a" : "#f0e8d8";
-      ctx.font = m.crit ? "700 16px 'IBM Plex Sans'" : "600 13px 'IBM Plex Sans'";
+      ctx.fillStyle = m.headshot ? "#ffd27a" : m.crit ? "#d4a04a" : "#f0e8d8";
+      ctx.font = m.headshot || m.crit ? "700 16px 'IBM Plex Sans'" : "600 13px 'IBM Plex Sans'";
       ctx.textAlign = "center";
       ctx.fillText(m.text, m.x, m.y);
+      if (m.headshot) {
+        ctx.font = "700 10px 'IBM Plex Sans'";
+        ctx.fillText("HEAD", m.x, m.y - 14);
+      }
       ctx.globalAlpha = 1;
     }
   }
@@ -84,10 +158,15 @@ export class Renderer {
     const { ctx } = this;
     const punch = world.player.aimPunch ?? 0;
     const reloading = world.player.reloadTimer > 0;
+    const recentHit = world.hitMarkers.some((m) => m.life > 0.55);
     const gap = world.player.state === "parachute" ? 10 : 5 + punch * 40 + (reloading ? 8 : 0);
     const len = 7;
     ctx.save();
-    ctx.strokeStyle = reloading ? "rgba(212, 160, 74, 0.85)" : "rgba(240, 232, 216, 0.9)";
+    ctx.strokeStyle = recentHit
+      ? "rgba(220, 70, 50, 0.95)"
+      : reloading
+        ? "rgba(212, 160, 74, 0.85)"
+        : "rgba(240, 232, 216, 0.9)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(mx - gap - len, my);
@@ -99,8 +178,18 @@ export class Renderer {
     ctx.moveTo(mx, my + gap);
     ctx.lineTo(mx, my + gap + len);
     ctx.stroke();
-    ctx.fillStyle = "rgba(212, 160, 74, 0.9)";
-    ctx.fillRect(mx - 1, my - 1, 2, 2);
+    if (recentHit) {
+      // PUBG-style hit confirm X
+      ctx.beginPath();
+      ctx.moveTo(mx - 4, my - 4);
+      ctx.lineTo(mx + 4, my + 4);
+      ctx.moveTo(mx + 4, my - 4);
+      ctx.lineTo(mx - 4, my + 4);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "rgba(212, 160, 74, 0.9)";
+      ctx.fillRect(mx - 1, my - 1, 2, 2);
+    }
     ctx.restore();
   }
 
@@ -295,9 +384,22 @@ export class Renderer {
     const { ctx } = this;
     for (const pile of map.loot) {
       if (pile.items.length === 0) continue;
-      ctx.fillStyle = pile.fromCrate ? "#d4a04a" : "#f0e8d8";
+      if (pile.fromCrate) {
+        // Death crate — readable square + skull mark (Surviv.io-style)
+        ctx.fillStyle = "#3a3228";
+        ctx.fillRect(pile.x - 8, pile.y - 8, 16, 16);
+        ctx.strokeStyle = "#d4a04a";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(pile.x - 8, pile.y - 8, 16, 16);
+        ctx.fillStyle = "#d4a04a";
+        ctx.font = "700 10px 'IBM Plex Sans'";
+        ctx.textAlign = "center";
+        ctx.fillText("☠", pile.x, pile.y + 3);
+        continue;
+      }
+      ctx.fillStyle = "#f0e8d8";
       ctx.beginPath();
-      ctx.arc(pile.x, pile.y, pile.fromCrate ? 7 : 5, 0, Math.PI * 2);
+      ctx.arc(pile.x, pile.y, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,0.4)";
       ctx.lineWidth = 1;
@@ -342,9 +444,18 @@ export class Renderer {
 
     ctx.rotate(f.aim);
 
-    const body = isPlayer ? "#f0e8d8" : isAlly ? "#a8d4a0" : "#c4b59a";
-    const accent = isPlayer ? "#d4a04a" : isAlly ? "#4a8f5a" : "#6a6254";
-    const legSwing = f.state === "alive" ? Math.sin(f.animPhase ?? 0) * 4 : 0;
+    // Surviv.io-style: enemies must read clearly on olive ground
+    const flashing = (f.hitFlash ?? 0) > 0;
+    const body = flashing
+      ? "#fff4e0"
+      : isPlayer
+        ? "#f0e8d8"
+        : isAlly
+          ? "#a8d4a0"
+          : "#8b3a2a";
+    const accent = isPlayer ? "#d4a04a" : isAlly ? "#4a8f5a" : "#e07040";
+    const moving = Math.hypot(f.vx, f.vy) > 5 || f.state === "parachute";
+    const legSwing = f.state === "alive" && moving ? Math.sin(f.animPhase ?? 0) * 4 : 0;
 
     // legs
     ctx.strokeStyle = body;
@@ -414,33 +525,58 @@ export class Renderer {
       ctx.arc(0, -20, 7, Math.PI, 0);
       ctx.stroke();
     }
+    // vest thickness by level
+    if (f.vest > 0) {
+      ctx.strokeStyle = f.vest >= 3 ? "#d4a04a" : f.vest === 2 ? "#a0a0b0" : "#8a7a60";
+      ctx.lineWidth = 1 + f.vest;
+      ctx.beginPath();
+      ctx.moveTo(0, -2);
+      ctx.lineTo(0, -12);
+      ctx.stroke();
+    }
 
     ctx.restore();
 
-    // name / hp — allies + self only (no enemy HP wallhacks)
+    // Surviv.io readability: ALWAYS show name + HP for anyone on screen
     ctx.save();
     ctx.font = "600 11px 'IBM Plex Sans', sans-serif";
     ctx.textAlign = "center";
-    ctx.fillStyle = isPlayer ? "#d4a04a" : "rgba(240,232,216,0.75)";
-    if (isPlayer || isAlly || f.state === "downed") {
-      ctx.fillText(f.name, f.x, f.y - 34);
-    }
-    if (f.state === "alive" && (isPlayer || isAlly)) {
-      const hw = 28;
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(f.x - hw / 2, f.y - 30, hw, 3);
-      ctx.fillStyle = f.hp > 40 ? "#3d9e5a" : "#c45c2a";
-      ctx.fillRect(f.x - hw / 2, f.y - 30, hw * (f.hp / 100), 3);
+    ctx.fillStyle = isPlayer ? "#d4a04a" : isAlly ? "#8fd49a" : "#f0c8b0";
+    ctx.fillText(f.name, f.x, f.y - 38);
+    if (f.state === "alive" || f.state === "downed") {
+      const hw = 32;
+      const hpRatio = Math.max(0, Math.min(1, f.hp / 100));
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(f.x - hw / 2, f.y - 34, hw, 4);
+      ctx.fillStyle =
+        f.state === "downed"
+          ? "#c45c2a"
+          : hpRatio > 0.5
+            ? "#3d9e5a"
+            : hpRatio > 0.25
+              ? "#d4a04a"
+              : "#c45c2a";
+      ctx.fillRect(f.x - hw / 2, f.y - 34, hw * hpRatio, 4);
+      if (f.helmet > 0 || f.vest > 0) {
+        ctx.fillStyle = "rgba(240,232,216,0.7)";
+        ctx.font = "9px 'IBM Plex Sans'";
+        ctx.fillText(`H${f.helmet} V${f.vest}`, f.x, f.y - 42);
+      }
     }
     if (f.state === "downed") {
       ctx.fillStyle = "#c45c2a";
-      ctx.font = "10px 'IBM Plex Sans'";
+      ctx.font = "700 10px 'IBM Plex Sans'";
       ctx.fillText("DOWNED", f.x, f.y + 22);
     }
-    if (f.healTimer > 0 && (isPlayer || isAlly)) {
+    if (f.healTimer > 0) {
       ctx.fillStyle = "#d4a04a";
       ctx.font = "10px 'IBM Plex Sans'";
       ctx.fillText("Healing…", f.x, f.y + 22);
+    }
+    if (f.reloadTimer > 0 && (isPlayer || isAlly)) {
+      ctx.fillStyle = "#d4a04a";
+      ctx.font = "10px 'IBM Plex Sans'";
+      ctx.fillText("Reloading…", f.x, f.y + 22);
     }
     ctx.restore();
   }

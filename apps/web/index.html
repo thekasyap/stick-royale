@@ -58,7 +58,7 @@
             </div>
 
             <button type="submit" class="cta" id="start-btn">DROP IN</button>
-            <p class="hint">WASD · Mouse aim · LMB shoot · F loot · G ping · H revive · V vehicle · 1–4 slots</p>
+            <p class="hint">WASD · Mouse aim · LMB shoot · RMB ADS · F loot · R reload · Q/C/Z/X heal · G ping · 1–4 slots</p>
             <p class="hint subtle" id="party-hint"></p>
           </form>
         </div>
@@ -69,6 +69,7 @@
       <div id="hud" class="hud hidden">
         <div class="hud-top">
           <div class="alive-pill"><span id="alive-count">48</span> ALIVE</div>
+          <div class="kills-pill"><span id="kill-count">0</span> KILLS</div>
           <div class="kill-feed" id="kill-feed"></div>
           <div class="phase-pill" id="phase-info">PHASE 1</div>
         </div>
@@ -87,6 +88,12 @@
             <span id="helmet-lvl">H0</span>
             <span id="vest-lvl">V0</span>
             <span id="bag-lvl">B0</span>
+          </div>
+          <div class="heal-block" id="heal-block">
+            <span id="heal-band">Q Band 5</span>
+            <span id="heal-med">C Med 0</span>
+            <span id="heal-drink">Z Drink 0</span>
+            <span id="heal-pain">X Pain 0</span>
           </div>
         </div>
         <div id="prompt" class="prompt"></div>

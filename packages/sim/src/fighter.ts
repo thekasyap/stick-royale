@@ -66,6 +66,8 @@ export type Fighter = {
   aimPunch: number;
   /** Parachute altitude 1→0 while gliding */
   chuteAlt: number;
+  /** Brief white flash when taking damage */
+  hitFlash: number;
   teamId: number;
   // bot AI
   botState?: string;
@@ -147,6 +149,7 @@ export function createFighter(
     invuln: 0,
     aimPunch: 0,
     chuteAlt: 1,
+    hitFlash: 0,
     teamId: isBot ? 1 : 0,
     botState: "drop",
     botTargetId: null,
@@ -217,6 +220,7 @@ export function applyDamage(
   const red = armorReduction(f, headshot);
   const dmg = Math.max(1, Math.round(raw * (1 - red)));
   f.hp -= dmg;
+  f.hitFlash = 0.12;
   if (f.healTimer > 0) {
     f.healTimer = 0;
     f.healItem = null;

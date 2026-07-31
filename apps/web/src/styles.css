@@ -213,6 +213,7 @@ body,
 }
 
 .alive-pill,
+.kills-pill,
 .phase-pill {
   background: var(--panel);
   padding: 6px 14px;
@@ -329,6 +330,31 @@ body,
   background: var(--panel);
   padding: 6px 10px;
   border: 1px solid rgba(196, 181, 154, 0.2);
+}
+
+.heal-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 170px;
+}
+
+.heal-block span {
+  background: var(--panel);
+  padding: 4px 7px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(196, 181, 154, 0.15);
+  color: var(--muted);
+}
+
+.heal-block span.has {
+  color: var(--text);
+  border-color: rgba(212, 160, 74, 0.4);
+}
+
+.heal-block span.empty {
+  opacity: 0.45;
 }
 
 .prompt {

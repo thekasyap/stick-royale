@@ -215,7 +215,7 @@ export function updateBullets(
   buildings: Building[],
   cover: Cover[],
   dt: number,
-  onHit: (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string) => void,
+  onHit: (attacker: Fighter, victim: Fighter, dmg: number, weaponId: string, headshot?: boolean) => void,
   allowKnock = false,
 ): void {
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -267,7 +267,7 @@ export function updateBullets(
       if (owner && dealt > 0) {
         owner.damageDealt += dealt;
         const gun = activeWeapon(owner);
-        onHit(owner, victim, dealt, gun?.weaponId ?? "gun");
+        onHit(owner, victim, dealt, gun?.weaponId ?? "gun", headshot);
       }
       bullets.splice(i, 1);
       break;

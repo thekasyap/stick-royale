@@ -40,6 +40,7 @@ class GameApp {
   private lastSfx = {
     shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
     zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
+    kills: 0, nearbyShots: 0,
   };
   private damageFlash = 0;
 
@@ -131,6 +132,7 @@ class GameApp {
     this.lastSfx = {
       shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
       zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
+      kills: 0, nearbyShots: 0,
     };
     this.damageFlash = 0;
     this.host = new MatchHost((bundle) => {
@@ -160,11 +162,17 @@ class GameApp {
     for (let i = this.lastSfx.redZones; i < s.redZones; i++) this.audio.redZone();
     for (let i = this.lastSfx.dryFires; i < s.dryFires; i++) this.audio.dryFire();
     for (let i = this.lastSfx.reloads; i < s.reloads; i++) this.audio.reload();
+    for (let i = this.lastSfx.nearbyShots; i < (s.nearbyShots ?? 0); i++) this.audio.shoot("ar");
+    for (let i = this.lastSfx.kills; i < (s.kills ?? 0); i++) this.audio.hit(true);
     if (s.damaged > this.lastSfx.damaged) {
       this.audio.damaged();
       this.damageFlash = 0.35;
     }
-    this.lastSfx = { ...s };
+    this.lastSfx = {
+      shots: s.shots, hits: s.hits, crits: s.crits, loots: s.loots, jumps: s.jumps,
+      zoneWarns: s.zoneWarns, redZones: s.redZones, dryFires: s.dryFires, reloads: s.reloads,
+      damaged: s.damaged, kills: s.kills ?? 0, nearbyShots: s.nearbyShots ?? 0,
+    };
   }
 
   private backToLobby(): void {
@@ -218,6 +226,8 @@ class GameApp {
     $("alive-count").textContent = String(
       bundle.fighters.filter((f) => f.state !== "dead").length,
     );
+    const kc = $("kill-count");
+    if (kc) kc.textContent = String(bundle.player.kills);
     $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
     const p = bundle.player;
     ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
@@ -226,6 +236,18 @@ class GameApp {
     $("helmet-lvl").textContent = `H${p.helmet}`;
     $("vest-lvl").textContent = `V${p.vest}`;
     $("bag-lvl").textContent = `B${p.backpack}`;
+
+    const setHeal = (id: string, key: string, label: string) => {
+      const el = $(id);
+      const n = (p.heals as Record<string, number | undefined>)[key] ?? 0;
+      el.textContent = `${label} ${n}`;
+      el.classList.toggle("has", n > 0);
+      el.classList.toggle("empty", n <= 0);
+    };
+    setHeal("heal-band", "bandage", "Q Band");
+    setHeal("heal-med", "medkit", "C Med");
+    setHeal("heal-drink", "energy_drink", "Z Drink");
+    setHeal("heal-pain", "painkiller", "X Pain");
 
     let wName = "—";
     let ammo = "";
