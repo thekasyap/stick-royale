@@ -69,7 +69,7 @@ packages/sim/      MatchSim — authoritative 20 Hz sim (worker + DO)
 
 ### Web (Vercel)
 
-Connect the repo. `vercel.json` builds `apps/web` and publishes `apps/web/dist`.
+Connect the repo (root directory: repository root, or `apps/web` with the included `apps/web/vercel.json`). The build writes static files to `dist/` at the repo root.
 
 Optional env:
 

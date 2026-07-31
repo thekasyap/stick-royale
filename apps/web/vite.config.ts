@@ -17,7 +17,8 @@ export default defineConfig({
     host: "127.0.0.1",
   },
   build: {
-    outDir: "dist",
+    outDir: path.resolve(__dirname, "../../dist"),
+    emptyOutDir: true,
     sourcemap: true,
   },
 });
