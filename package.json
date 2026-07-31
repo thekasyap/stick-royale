@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.33.3",
   "scripts": {
     "dev": "pnpm --filter @stick-royale/web dev",
-    "build": "pnpm --filter @stick-royale/shared build && pnpm --filter @stick-royale/sim build && pnpm --filter @stick-royale/web build",
+    "build": "pnpm --filter @stick-royale/shared build && pnpm --filter @stick-royale/sim build && pnpm --filter @stick-royale/web build && rm -rf dist && cp -r apps/web/dist dist",
     "build:shared": "pnpm --filter @stick-royale/shared build",
     "build:sim": "pnpm --filter @stick-royale/sim build",
     "dev:server": "pnpm --filter @stick-royale/server dev",
