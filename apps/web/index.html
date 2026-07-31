@@ -107,30 +107,43 @@
           </div>
         </div>
         <div id="prompt" class="prompt"></div>
-        <div id="drop-banner" class="drop-banner hidden">JUMP · SPACE / F</div>
-        <div id="mobile-tip" class="mobile-tip hidden">Left move · Right aim · Fire button · Loot</div>
-
-        <div id="touch-ui" class="touch-ui" aria-hidden="true">
-          <div class="stick-zone" id="stick-zone">
-            <div class="stick-base" id="stick-base">
-              <div class="stick-knob" id="stick-knob"></div>
-            </div>
-          </div>
-          <button type="button" id="fire-btn" class="fire-btn" aria-label="Fire">FIRE</button>
+        <div id="drop-banner" class="drop-banner hidden">JUMP</div>
+        <div id="mobile-tip" class="mobile-tip hidden">
+          Left stick move · Right stick aim · FIRE shoots · Auto-loot on
         </div>
 
-        <div id="mobile-controls" class="mobile-controls" aria-hidden="true">
-          <div class="mbtn-row heal-row">
-            <button type="button" data-key="q" class="mbtn heal">Band</button>
-            <button type="button" data-key="c" class="mbtn heal">Med</button>
-            <button type="button" data-key="z" class="mbtn heal">Drink</button>
-            <button type="button" data-key="x" class="mbtn heal">Pain</button>
+        <div id="touch-ui" class="touch-ui" aria-hidden="true">
+          <div class="touch-left">
+            <div class="heal-rail" id="heal-rail">
+              <button type="button" data-key="q" class="mbtn heal">Band</button>
+              <button type="button" data-key="c" class="mbtn heal">Med</button>
+              <button type="button" data-key="z" class="mbtn heal">Drink</button>
+              <button type="button" data-key="x" class="mbtn heal">Pain</button>
+            </div>
+            <div class="stick-pad" id="move-pad" aria-label="Move">
+              <div class="stick-base" id="stick-base">
+                <div class="stick-knob" id="stick-knob"></div>
+              </div>
+              <span class="pad-label">MOVE</span>
+            </div>
           </div>
-          <div class="mbtn-row action-row">
-            <button type="button" data-key="r" class="mbtn">Reload</button>
-            <button type="button" data-key="f" class="mbtn">Loot</button>
-            <button type="button" data-ads class="mbtn">ADS</button>
-            <button type="button" data-key=" " class="mbtn">Jump</button>
+
+          <div class="touch-right">
+            <div class="action-rail">
+              <button type="button" data-key="r" class="mbtn round">R</button>
+              <button type="button" data-ads class="mbtn round">ADS</button>
+              <button type="button" data-key=" " class="mbtn jump" id="jump-btn">JUMP</button>
+            </div>
+            <div class="aim-cluster">
+              <div class="stick-pad aim-pad" id="aim-pad" aria-label="Aim">
+                <div class="stick-base" id="aim-base">
+                  <div class="stick-knob" id="aim-knob"></div>
+                </div>
+                <span class="pad-label">AIM</span>
+              </div>
+              <button type="button" id="fire-btn" class="fire-btn" aria-label="Fire">FIRE</button>
+            </div>
+            <div class="auto-loot-pill" id="auto-loot-pill">AUTO LOOT</div>
           </div>
         </div>
       </div>
