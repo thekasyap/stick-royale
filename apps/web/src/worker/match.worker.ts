@@ -22,7 +22,12 @@ self.onmessage = (ev: MessageEvent) => {
   try {
     if (msg.type === "init" && msg.config) {
       sim = new MatchSim(msg.config);
-      self.postMessage({ type: "ready", bundle: sim.exportRenderBundle() });
+      // Full bundle once (includes static map)
+      self.postMessage({
+        type: "ready",
+        bundle: sim.exportRenderBundle(true),
+        hasMap: true,
+      });
       return;
     }
 
@@ -33,11 +38,15 @@ self.onmessage = (ev: MessageEvent) => {
         msg.viewW ?? 1280,
         msg.viewH ?? 720,
       );
-      self.postMessage({ type: "frame", bundle: sim.exportRenderBundle() });
+      // Omit static map — main thread reuses cached island (huge mobile win)
+      self.postMessage({
+        type: "frame",
+        bundle: sim.exportRenderBundle(false),
+        hasMap: false,
+      });
       return;
     }
 
-    // Always acknowledge ticks so MatchHost never stays pending forever
     if (msg.type === "tick") {
       self.postMessage({
         type: "error",

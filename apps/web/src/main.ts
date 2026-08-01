@@ -5,11 +5,11 @@ import { GameAudio } from "./game/audio";
 import { Input } from "./game/input";
 import { MatchHost } from "./game/match-host";
 import { Renderer } from "./game/renderer";
+import { loadSettings, saveSettings, type Settings } from "./game/settings";
 import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const AUDIO_KEY = "stick_royale_audio";
 const MOBILE_TIP_KEY = "stick_royale_mobile_tip";
 
 function ensureGuestId(): string {
@@ -33,14 +33,6 @@ function isTouchCapable(): boolean {
   );
 }
 
-function vibrate(ms: number): void {
-  try {
-    navigator.vibrate?.(ms);
-  } catch {
-    /* ignore */
-  }
-}
-
 class GameApp {
   private canvas = $("game") as HTMLCanvasElement;
   private minimapCanvas = $("minimap") as HTMLCanvasElement;
@@ -49,6 +41,7 @@ class GameApp {
   private input = new Input(this.canvas);
   private renderer = new Renderer(this.ctx, this.miniCtx);
   private audio = new GameAudio();
+  private settings: Settings = loadSettings();
   private host: MatchHost | null = null;
   private bundle: RenderBundle | null = null;
   private raf = 0;
@@ -57,6 +50,8 @@ class GameApp {
   private paused = false;
   private touchMode = false;
   private mobileTipShown = false;
+  private lastKillFeed = "";
+  private lastPrompt = "";
   private lastSfx = {
     shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
     zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
@@ -71,25 +66,94 @@ class GameApp {
 
   constructor() {
     ensureGuestId();
+    this.applySettings();
     this.detectTouch();
     this.bindLobby();
+    this.bindSettingsUi();
     this.bindTouchControls();
     this.bindVisibility();
     this.resize();
     window.addEventListener("resize", () => this.resize());
     $("play-again").addEventListener("click", () => this.backToLobby());
-    this.audio.setEnabled(localStorage.getItem(AUDIO_KEY) !== "0");
+    $("pause-btn").addEventListener("click", () => this.openSettings(true));
+  }
+
+  private applySettings(): void {
+    this.audio.setEnabled(this.settings.audio);
+    this.input.setSensitivity(this.settings.sensitivity);
+    this.input.autoLoot = this.settings.autoLoot;
+    if (this.touchMode) this.input.enableTouchMode(this.settings.autoLoot);
+  }
+
+  private vibrate(ms: number): void {
+    if (!this.settings.haptics) return;
+    try {
+      navigator.vibrate?.(ms);
+    } catch {
+      /* ignore */
+    }
   }
 
   private detectTouch(): void {
     if (isTouchCapable()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
-      this.input.enableTouchMode();
+      this.input.enableTouchMode(this.settings.autoLoot);
       const hint = $("controls-hint");
       hint.textContent =
-        "Left MOVE stick · Right AIM stick · FIRE to shoot · JUMP · Auto-loot picks ammo/heals/armor";
+        "Left MOVE · Right AIM · FIRE · JUMP · Auto-loot on · Open Settings anytime";
     }
+  }
+
+  private bindSettingsUi(): void {
+    const modal = $("settings-modal");
+    const syncForm = () => {
+      ( $("set-audio") as HTMLInputElement).checked = this.settings.audio;
+      ( $("set-haptics") as HTMLInputElement).checked = this.settings.haptics;
+      ( $("set-autoloot") as HTMLInputElement).checked = this.settings.autoLoot;
+      ( $("set-lowpower") as HTMLInputElement).checked = this.settings.lowPower;
+      const sens = $("set-sensitivity") as HTMLInputElement;
+      sens.value = String(Math.round(this.settings.sensitivity * 100));
+      $("sens-val").textContent = this.settings.sensitivity.toFixed(2);
+    };
+    $("open-settings").addEventListener("click", () => this.openSettings(false));
+    $("close-settings").addEventListener("click", () => {
+      this.settings = {
+        audio: ($("set-audio") as HTMLInputElement).checked,
+        haptics: ($("set-haptics") as HTMLInputElement).checked,
+        autoLoot: ($("set-autoloot") as HTMLInputElement).checked,
+        lowPower: ($("set-lowpower") as HTMLInputElement).checked,
+        sensitivity: Number(($("set-sensitivity") as HTMLInputElement).value) / 100,
+      };
+      saveSettings(this.settings);
+      this.applySettings();
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+      if (this.running) {
+        this.paused = false;
+        this.last = performance.now();
+        this.input.resetPointers();
+      }
+    });
+    ($("set-sensitivity") as HTMLInputElement).addEventListener("input", () => {
+      const v = Number(($("set-sensitivity") as HTMLInputElement).value) / 100;
+      $("sens-val").textContent = v.toFixed(2);
+    });
+    // expose sync for open
+    this.syncSettingsForm = syncForm;
+  }
+
+  private syncSettingsForm: () => void = () => undefined;
+
+  private openSettings(fromMatch: boolean): void {
+    this.syncSettingsForm();
+    if (fromMatch && this.running) {
+      this.paused = true;
+      this.input.resetPointers();
+    }
+    const modal = $("settings-modal");
+    modal.classList.remove("hidden");
+    modal.setAttribute("aria-hidden", "false");
   }
 
   private bindVisibility(): void {
@@ -97,74 +161,69 @@ class GameApp {
       if (!this.running) return;
       if (document.hidden) {
         this.paused = true;
+        this.input.resetPointers();
       } else {
         this.paused = false;
         this.last = performance.now();
+        this.input.resetPointers();
       }
     });
   }
 
-  private bindTouchControls(): void {
-    const movePad = $("move-pad");
-    const aimPad = $("aim-pad");
-    this.input.bindStickPad(movePad);
-    this.input.bindAimPad(aimPad);
-
-    const downFire = (e: Event) => {
+  private bindBtn(el: Element, down: (e: PointerEvent) => void, up: () => void): void {
+    const onDown = (e: Event) => {
+      const pe = e as PointerEvent;
       e.preventDefault();
+      e.stopPropagation();
+      try { (el as HTMLElement).setPointerCapture(pe.pointerId); } catch { /* */ }
+      down(pe);
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("lostpointercapture", up);
+  }
+
+  private bindTouchControls(): void {
+    this.input.bindStickPad($("move-pad"));
+    this.input.bindAimPad($("aim-pad"));
+
+    this.bindBtn(this.fireBtn, () => {
       this.audio.unlock();
       this.input.mouseDown = true;
       this.input.touchFire = true;
       this.input.fireBtnActive = true;
       this.fireBtn.classList.add("active");
-    };
-    const upFire = () => {
+    }, () => {
       this.input.mouseDown = false;
       this.input.touchFire = false;
       this.input.fireBtnActive = false;
       this.fireBtn.classList.remove("active");
-    };
-    this.fireBtn.addEventListener("pointerdown", downFire);
-    this.fireBtn.addEventListener("pointerup", upFire);
-    this.fireBtn.addEventListener("pointercancel", upFire);
-    this.fireBtn.addEventListener("lostpointercapture", upFire);
+    });
 
     const root = $("touch-ui");
     root.querySelectorAll("[data-key]").forEach((btn) => {
       const key = (btn as HTMLElement).dataset.key!;
-      const press = (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
+      this.bindBtn(btn, () => {
         this.audio.unlock();
         this.input.injectPress(key);
         (btn as HTMLElement).classList.add("active");
-      };
-      const release = () => {
+      }, () => {
         this.input.injectRelease(key);
         (btn as HTMLElement).classList.remove("active");
-      };
-      btn.addEventListener("pointerdown", press);
-      btn.addEventListener("pointerup", release);
-      btn.addEventListener("pointercancel", release);
-      btn.addEventListener("lostpointercapture", release);
+      });
     });
 
     const ads = root.querySelector("[data-ads]");
     if (ads) {
-      const down = (e: Event) => {
-        e.preventDefault();
+      this.bindBtn(ads, () => {
         this.audio.unlock();
         this.input.mouseRight = true;
         ads.classList.add("active");
-      };
-      const up = () => {
+      }, () => {
         this.input.mouseRight = false;
         ads.classList.remove("active");
-      };
-      ads.addEventListener("pointerdown", down);
-      ads.addEventListener("pointerup", up);
-      ads.addEventListener("pointercancel", up);
-      ads.addEventListener("lostpointercapture", up);
+      });
     }
   }
 
@@ -198,7 +257,8 @@ class GameApp {
   }
 
   private resize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const maxDpr = this.settings.lowPower ? 1.5 : 2;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.canvas.width = Math.floor(w * dpr);
@@ -216,20 +276,25 @@ class GameApp {
     document.body.classList.add("playing");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
-      this.input.enableTouchMode();
+      this.input.enableTouchMode(this.settings.autoLoot);
       this.maybeShowMobileTip();
     }
+    this.applySettings();
     this.lastSfx = {
       shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
       zoneWarns: 0, redZones: 0, dryFires: 0, reloads: 0, damaged: 0,
       kills: 0, nearbyShots: 0,
     };
     this.damageFlash = 0;
+    this.lastKillFeed = "";
+    this.lastPrompt = "";
     this.host?.destroy();
+    // Stable mode / phones: main-thread sim avoids worker clone freezes
+    const preferMain = this.settings.lowPower || this.touchMode;
     this.host = new MatchHost((bundle) => {
       this.playSfxDiff(bundle);
       this.bundle = bundle;
-    });
+    }, { preferMainThread: preferMain });
     this.host.start(config);
     this.running = true;
     this.paused = false;
@@ -274,12 +339,12 @@ class GameApp {
     for (let i = this.lastSfx.nearbyShots; i < (s.nearbyShots ?? 0); i++) this.audio.shoot("ar");
     for (let i = this.lastSfx.kills; i < (s.kills ?? 0); i++) {
       this.audio.hit(true);
-      vibrate(40);
+      this.vibrate(40);
     }
     if (s.damaged > this.lastSfx.damaged) {
       this.audio.damaged();
       this.damageFlash = 0.35;
-      vibrate(25);
+      this.vibrate(25);
     }
     this.lastSfx = {
       shots: s.shots, hits: s.hits, crits: s.crits, loots: s.loots, jumps: s.jumps,
@@ -340,10 +405,12 @@ class GameApp {
     this.host = null;
     this.bundle = null;
     cancelAnimationFrame(this.raf);
+    this.input.resetPointers();
     document.body.classList.remove("playing", "touch-mode");
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
+    $("settings-modal").classList.add("hidden");
     $("lobby").classList.remove("hidden");
   }
 
@@ -443,7 +510,10 @@ class GameApp {
     }
     $("weapon-name").textContent = wName;
     $("ammo-text").textContent = ammo;
-    $("prompt").textContent = bundle.prompt;
+    if (bundle.prompt !== this.lastPrompt) {
+      this.lastPrompt = bundle.prompt;
+      $("prompt").textContent = bundle.prompt;
+    }
 
     const drop = $("drop-banner");
     if (p.state === "plane") {
@@ -459,7 +529,7 @@ class GameApp {
       drop.classList.add("hidden");
     }
 
-    $("kill-feed").innerHTML = bundle.killFeed
+    const feedHtml = bundle.killFeed
       .slice(0, 5)
       .map((k) => {
         const tag = k.knocked ? " knocked " : " ";
@@ -467,6 +537,10 @@ class GameApp {
         return `<div class="entry${you}">${escapeHtml(k.killer)} [${escapeHtml(k.weapon)}]${tag}${escapeHtml(k.victim)}</div>`;
       })
       .join("");
+    if (feedHtml !== this.lastKillFeed) {
+      this.lastKillFeed = feedHtml;
+      $("kill-feed").innerHTML = feedHtml;
+    }
   }
 
   private showResults(r: NonNullable<RenderBundle["result"]>): void {

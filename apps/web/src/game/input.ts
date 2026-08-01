@@ -4,8 +4,6 @@
  *   Left stick  → move
  *   Right stick → aim (relative to player / screen center)
  *   FIRE        → shoot along aim
- *   JUMP / R    → action buttons
- *   autoLoot    → always on for touch
  */
 export class Input {
   keys = new Set<string>();
@@ -15,9 +13,10 @@ export class Input {
   mouseRight = false;
   wheelDelta = 0;
   autoLoot = false;
+  /** Aim stick / mouse scale from settings (0.5–2) */
+  sensitivity = 1;
   private justPressed = new Set<string>();
   touchMove = { x: 0, y: 0 };
-  /** Aim stick −1..1; converted to mouse relative to screen center */
   aimStick = { x: 1, y: 0 };
   touchFire = false;
   fireBtnActive = false;
@@ -52,6 +51,17 @@ export class Input {
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.key.toLowerCase());
     });
+    // Global mouse up — release outside canvas must not stick FIRE/ADS
+    window.addEventListener("mouseup", (e) => {
+      if (this.usingTouch) return;
+      if (e.button === 0) this.mouseDown = false;
+      if (e.button === 2) this.mouseRight = false;
+    });
+    window.addEventListener("blur", () => this.resetPointers());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.resetPointers();
+    });
+
     canvas.addEventListener("mousemove", (e) => {
       if (this.usingTouch) return;
       const rect = canvas.getBoundingClientRect();
@@ -62,11 +72,6 @@ export class Input {
       if (this.usingTouch) return;
       if (e.button === 0) this.mouseDown = true;
       if (e.button === 2) this.mouseRight = true;
-    });
-    canvas.addEventListener("mouseup", (e) => {
-      if (this.usingTouch) return;
-      if (e.button === 0) this.mouseDown = false;
-      if (e.button === 2) this.mouseRight = false;
     });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     canvas.addEventListener("wheel", (e) => {
@@ -81,9 +86,14 @@ export class Input {
     this.applyAimToMouse();
   }
 
-  enableTouchMode(): void {
+  setSensitivity(s: number): void {
+    this.sensitivity = Math.max(0.5, Math.min(2, s));
+    if (this.usingTouch) this.applyAimToMouse();
+  }
+
+  enableTouchMode(autoLoot = true): void {
     this.usingTouch = true;
-    this.autoLoot = true;
+    this.autoLoot = autoLoot;
     this.aimStick = { x: 1, y: 0 };
     this.applyAimToMouse();
   }
@@ -92,14 +102,28 @@ export class Input {
     return this.usingTouch;
   }
 
-  /** Bind interactive stick pads (HTML overlays) — PUBG-style, not invisible canvas zones */
+  /** Clear stuck sticks / fire / keys after blur, pause, or lost capture */
+  resetPointers(): void {
+    this.stickPointerId = null;
+    this.aimPointerId = null;
+    this.stickOrigin = null;
+    this.aimOrigin = null;
+    this.touchMove = { x: 0, y: 0 };
+    this.stickVisible = false;
+    this.aimVisible = false;
+    this.mouseDown = false;
+    this.mouseRight = false;
+    this.touchFire = false;
+    this.fireBtnActive = false;
+    this.keys.clear();
+  }
+
   bindStickPad(el: HTMLElement): void {
     el.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       this.usingTouch = true;
-      this.autoLoot = true;
       if (this.stickPointerId !== null) return;
       try { el.setPointerCapture(e.pointerId); } catch { /* */ }
       const rect = el.getBoundingClientRect();
@@ -130,6 +154,7 @@ export class Input {
     };
     el.addEventListener("pointerup", end);
     el.addEventListener("pointercancel", end);
+    el.addEventListener("lostpointercapture", end);
   }
 
   bindAimPad(el: HTMLElement): void {
@@ -138,7 +163,6 @@ export class Input {
       e.preventDefault();
       e.stopPropagation();
       this.usingTouch = true;
-      this.autoLoot = true;
       if (this.aimPointerId !== null) return;
       try { el.setPointerCapture(e.pointerId); } catch { /* */ }
       const rect = el.getBoundingClientRect();
@@ -165,10 +189,10 @@ export class Input {
       this.aimPointerId = null;
       this.aimOrigin = null;
       this.aimVisible = false;
-      // Keep last aimStick so fire direction stays where you pointed
     };
     el.addEventListener("pointerup", end);
     el.addEventListener("pointercancel", end);
+    el.addEventListener("lostpointercapture", end);
   }
 
   private updateStickVector(x: number, y: number, w: number, h: number): void {
@@ -185,16 +209,15 @@ export class Input {
   private updateAimVector(x: number, y: number, w: number, h: number): void {
     const cx = w / 2;
     const cy = h / 2;
-    const dx = x - cx;
-    const dy = y - cy;
+    const dx = (x - cx) * this.sensitivity;
+    const dy = (y - cy) * this.sensitivity;
     const len = Math.hypot(dx, dy) || 1;
     const max = Math.min(w, h) * 0.38;
-    const mag = Math.min(1, Math.max(0.35, len / max)); // deadzone floor so aim never zeros
+    const mag = Math.min(1, Math.max(0.25, len / max));
     this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
     this.applyAimToMouse();
   }
 
-  /** Map twin-stick aim → screen coords around player (camera center) */
   private applyAimToMouse(): void {
     const reach = Math.min(this.viewW, this.viewH) * 0.35;
     this.mouseX = this.viewW / 2 + this.aimStick.x * reach;
@@ -206,7 +229,6 @@ export class Input {
     this.wheelDelta = 0;
   }
 
-  /** Always edge on tap — even if key was stuck down from a missed release */
   injectPress(key: string): void {
     const k = key.toLowerCase();
     this.justPressed.add(k);
