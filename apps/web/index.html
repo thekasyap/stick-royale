@@ -68,15 +68,44 @@
             </div>
 
             <button type="submit" class="cta" id="start-btn">DROP IN</button>
+            <button type="button" class="settings-link" id="open-settings">Settings</button>
             <p class="hint" id="controls-hint">WASD · Mouse aim · LMB shoot · RMB ADS · F loot · R reload · Q/C/Z/X heal · G ping · 1–4 slots</p>
             <p class="hint subtle" id="party-hint"></p>
           </form>
         </div>
       </div>
 
+      <div id="settings-modal" class="settings-modal hidden" aria-hidden="true">
+        <div class="settings-card">
+          <h2>SETTINGS</h2>
+          <label class="toggle">
+            <input type="checkbox" id="set-audio" />
+            <span>Sound</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="set-haptics" />
+            <span>Haptics (mobile)</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="set-autoloot" />
+            <span>Auto-loot</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="set-lowpower" />
+            <span>Stable mode (recommended on phones)</span>
+          </label>
+          <label class="range">
+            <span>Aim sensitivity <em id="sens-val">1.0</em></span>
+            <input type="range" id="set-sensitivity" min="50" max="200" step="5" />
+          </label>
+          <button type="button" class="cta" id="close-settings">DONE</button>
+        </div>
+      </div>
+
       <canvas id="game" width="1280" height="720"></canvas>
 
-      <div id="hud" class="hud hidden">
+        <div id="hud" class="hud hidden">
+        <button type="button" id="pause-btn" class="pause-btn" aria-label="Settings">☰</button>
         <div class="hud-top">
           <div class="alive-pill"><span id="alive-count">48</span> ALIVE</div>
           <div class="kills-pill"><span id="kill-count">0</span> KILLS</div>

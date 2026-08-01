@@ -247,7 +247,7 @@ export class World {
     this.updatePlayer(dt, input, viewW, viewH);
     this.tickMidgame(dt);
 
-    const botStride = 2;
+    const botStride = 3;
     const frame = Math.floor(this.time * 60);
     for (let i = 0; i < this.fighters.length; i++) {
       const f = this.fighters[i]!;
@@ -887,10 +887,14 @@ export class World {
     return this.fighters.filter((f) => f.teamId === this.player.teamId && f.id !== this.player.id);
   }
 
-  /** Serializable render state for Web Worker → main thread */
-  exportRenderBundle() {
+  /** Serializable render state for Web Worker → main thread.
+   *  Pass includeMap=false after the first frame to skip cloning static island geometry.
+   *  Loot is always included (mutates every pickup). */
+  exportRenderBundle(includeMap = true) {
     return {
-      map: this.map,
+      map: includeMap ? this.map : (null as unknown as typeof this.map),
+      /** Always sent — piles mutate; main stitches onto cached map */
+      loot: this.map.loot,
       fighters: this.fighters,
       player: this.player,
       zone: this.zone,

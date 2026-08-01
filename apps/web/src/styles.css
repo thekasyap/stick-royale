@@ -188,6 +188,105 @@ body,
   transform: translateY(0);
 }
 
+.settings-link {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(196, 181, 154, 0.3);
+  background: transparent;
+  color: var(--sand);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.settings-link:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.settings-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 14, 8, 0.78);
+  pointer-events: auto;
+}
+
+.settings-card {
+  width: min(380px, 92vw);
+  padding: 1.75rem 1.5rem;
+  background: linear-gradient(180deg, #2a3524, #1a2218);
+  border: 1px solid rgba(212, 160, 74, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.settings-card h2 {
+  font-family: var(--font-brand);
+  font-size: 2rem;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
+.settings-card .toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-card .toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.settings-card .range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.settings-card .range em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.settings-card .range input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.pause-btn {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 12;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(212, 160, 74, 0.45);
+  background: rgba(18, 24, 16, 0.82);
+  color: var(--text);
+  font-size: 1.2rem;
+  border-radius: 8px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
 .hint {
   font-size: 0.72rem;
   color: var(--muted);

@@ -11,6 +11,7 @@ const ROAD = "#5a5348";
 
 export class Renderer {
   private grassPattern: CanvasPattern | null = null;
+  private view = { l: 0, t: 0, r: MAP_SIZE, b: MAP_SIZE };
 
   constructor(
     private ctx: CanvasRenderingContext2D,
@@ -36,9 +37,23 @@ export class Renderer {
     return this.ctx.createPattern(c, "repeat");
   }
 
+  private inView(x: number, y: number, pad = 40): boolean {
+    return x >= this.view.l - pad && x <= this.view.r + pad &&
+      y >= this.view.t - pad && y <= this.view.b + pad;
+  }
+
   draw(world: RenderBundle, w: number, h: number, mouseX = w / 2, mouseY = h / 2): void {
     const { ctx } = this;
     const cam = world.camera;
+    const halfW = (w / 2) / cam.zoom;
+    const halfH = (h / 2) / cam.zoom;
+    this.view = {
+      l: cam.x - halfW,
+      t: cam.y - halfH,
+      r: cam.x + halfW,
+      b: cam.y + halfH,
+    };
+
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = "#1a2218";
@@ -48,10 +63,12 @@ export class Renderer {
     ctx.scale(cam.zoom, cam.zoom);
     ctx.translate(-cam.x, -cam.y);
 
-    this.drawTerrain(world.map);
+    if (world.map) {
+      this.drawTerrain(world.map);
+      this.drawLoot(world.map);
+    }
     this.drawZone(world);
     this.drawRedZone(world);
-    this.drawLoot(world.map);
     this.drawCarePackages(world);
     this.drawVehicles(world);
     this.drawSmokes(world);
@@ -198,8 +215,9 @@ export class Renderer {
     ctx.fillStyle = this.grassPattern ?? GRASS_A;
     ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-    // soft hills
+    // soft hills (only in viewport — avoid per-frame work for offscreen POIs)
     for (const poi of map.pois) {
+      if (!this.inView(poi.x, poi.y, poi.radius * 1.4)) continue;
       const grd = ctx.createRadialGradient(poi.x, poi.y, 10, poi.x, poi.y, poi.radius * 1.4);
       grd.addColorStop(0, "rgba(70, 90, 50, 0.25)");
       grd.addColorStop(1, "transparent");
@@ -235,6 +253,7 @@ export class Renderer {
     }
 
     for (const b of map.buildings) {
+      if (b.x + b.w < this.view.l || b.x > this.view.r || b.y + b.h < this.view.t || b.y > this.view.b) continue;
       ctx.fillStyle = b.color;
       ctx.fillRect(b.x, b.y, b.w, b.h);
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
@@ -246,6 +265,7 @@ export class Renderer {
     }
 
     for (const c of map.cover) {
+      if (!this.inView(c.x, c.y, c.r + 8)) continue;
       if (c.kind === "tree") {
         ctx.fillStyle = "#2f4a28";
         ctx.beginPath();
@@ -384,6 +404,7 @@ export class Renderer {
     const { ctx } = this;
     for (const pile of map.loot) {
       if (pile.items.length === 0) continue;
+      if (!this.inView(pile.x, pile.y, 24)) continue;
       if (pile.fromCrate) {
         // Death crate — readable square + skull mark (Surviv.io-style)
         ctx.fillStyle = "#3a3228";
@@ -411,6 +432,7 @@ export class Renderer {
     for (const f of world.fighters) {
       if (f.state === "dead") continue;
       if (f.state === "plane") continue;
+      if (!this.inView(f.x, f.y, 60)) continue;
       const isPlayer = f.id === world.player.id;
       const isAlly = !isPlayer && f.teamId === world.player.teamId;
       this.drawStick(f, isPlayer, isAlly, world.time);
