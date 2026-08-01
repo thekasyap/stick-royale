@@ -66,16 +66,89 @@ class GameApp {
 
   constructor() {
     ensureGuestId();
+    document.body.classList.add("lobby-open");
     this.applySettings();
     this.detectTouch();
     this.bindLobby();
     this.bindSettingsUi();
     this.bindTouchControls();
     this.bindVisibility();
+    this.bindViewportLock();
     this.resize();
     window.addEventListener("resize", () => this.resize());
+    window.visualViewport?.addEventListener("resize", () => this.resize());
+    window.visualViewport?.addEventListener("scroll", () => this.fixViewportScroll());
     $("play-again").addEventListener("click", () => this.backToLobby());
     $("pause-btn").addEventListener("click", () => this.openSettings(true));
+  }
+
+  /** Block pinch/double-tap browser zoom that leaves black bars */
+  private bindViewportLock(): void {
+    const block = (e: Event) => {
+      if (!this.running) return;
+      e.preventDefault();
+    };
+    document.addEventListener("gesturestart", block as EventListener, { passive: false });
+    document.addEventListener("gesturechange", block as EventListener, { passive: false });
+    document.addEventListener("gestureend", block as EventListener, { passive: false });
+    document.addEventListener(
+      "touchmove",
+      (e) => {
+        if (this.running && e.touches.length > 1) e.preventDefault();
+      },
+      { passive: false },
+    );
+    // Kill iOS double-tap zoom while in match
+    let lastTap = 0;
+    document.addEventListener(
+      "touchend",
+      (e) => {
+        if (!this.running) return;
+        const now = performance.now();
+        if (now - lastTap < 320) e.preventDefault();
+        lastTap = now;
+      },
+      { passive: false },
+    );
+  }
+
+  private fixViewportScroll(): void {
+    if (!this.running) return;
+    window.scrollTo(0, 0);
+    if (window.visualViewport && window.visualViewport.offsetTop !== 0) {
+      window.scrollTo(0, 0);
+    }
+  }
+
+  private async enterImmersive(): Promise<void> {
+    try {
+      const root = document.documentElement;
+      if (!document.fullscreenElement && root.requestFullscreen) {
+        await root.requestFullscreen();
+      }
+    } catch {
+      /* browsers may deny — ignore */
+    }
+    try {
+      const orient = screen.orientation as ScreenOrientation & { lock?: (t: string) => Promise<void> };
+      await orient.lock?.("landscape");
+    } catch {
+      /* optional */
+    }
+  }
+
+  private async exitImmersive(): Promise<void> {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+    } catch {
+      /* */
+    }
+    try {
+      const orient = screen.orientation as ScreenOrientation & { unlock?: () => void };
+      orient.unlock?.();
+    } catch {
+      /* */
+    }
   }
 
   private applySettings(): void {
@@ -257,16 +330,19 @@ class GameApp {
   }
 
   private resize(): void {
-    const maxDpr = this.settings.lowPower ? 1.5 : 2;
+    const maxDpr = this.settings.lowPower ? 1.25 : 2;
     const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // visualViewport fixes black bars after accidental browser zoom
+    const vv = window.visualViewport;
+    const w = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
+    const h = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.input.setViewSize(w, h);
+    this.fixViewportScroll();
   }
 
   private startMatch(config: MatchConfig): void {
@@ -274,11 +350,13 @@ class GameApp {
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
     document.body.classList.add("playing");
+    document.body.classList.remove("lobby-open");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
       this.input.enableTouchMode(this.settings.autoLoot);
       this.maybeShowMobileTip();
     }
+    void this.enterImmersive();
     this.applySettings();
     this.lastSfx = {
       shots: 0, hits: 0, crits: 0, loots: 0, jumps: 0,
@@ -289,7 +367,6 @@ class GameApp {
     this.lastKillFeed = "";
     this.lastPrompt = "";
     this.host?.destroy();
-    // Stable mode / phones: main-thread sim avoids worker clone freezes
     const preferMain = this.settings.lowPower || this.touchMode;
     this.host = new MatchHost((bundle) => {
       this.playSfxDiff(bundle);
@@ -299,6 +376,7 @@ class GameApp {
     this.running = true;
     this.paused = false;
     this.last = performance.now();
+    this.resize();
     cancelAnimationFrame(this.raf);
     this.loop(this.last);
   }
@@ -406,7 +484,9 @@ class GameApp {
     this.bundle = null;
     cancelAnimationFrame(this.raf);
     this.input.resetPointers();
+    void this.exitImmersive();
     document.body.classList.remove("playing", "touch-mode");
+    document.body.classList.add("lobby-open");
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
@@ -425,11 +505,14 @@ class GameApp {
 
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    const viewW = window.innerWidth;
-    const viewH = window.innerHeight;
+    const vv = window.visualViewport;
+    const viewW = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
+    const viewH = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
     this.host.tick(dt, this.input, viewW, viewH);
     if (this.bundle) {
-      this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY);
+      this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY, {
+        compactHud: this.touchMode,
+      });
       this.syncHud(this.bundle);
       this.drawDamageVignette(viewW, viewH, dt);
       if (

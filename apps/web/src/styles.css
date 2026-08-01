@@ -32,17 +32,26 @@ body,
   background: var(--bg-deep);
   color: var(--text);
   font-family: var(--font-ui);
+  /* Kill iOS/Android double-tap zoom & pinch during play */
+  touch-action: none;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+body.lobby-open {
+  touch-action: manipulation;
 }
 
 #game {
   display: block;
   width: 100%;
   height: 100%;
-  background: #2a3526;
+  background: #1a2218;
   cursor: crosshair;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .hidden {
@@ -56,7 +65,9 @@ body,
   z-index: 20;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow: auto;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
 }
 
 .lobby-atmosphere {
@@ -781,31 +792,90 @@ body.touch-mode .touch-ui {
   display: block;
 }
 
-body.touch-mode .heal-block {
+/* Slim mobile HUD — keep combat readable, hide clutter */
+body.touch-mode .heal-block,
+body.touch-mode .armor-block,
+body.touch-mode .kills-pill,
+body.touch-mode .pad-label,
+body.touch-mode .auto-loot-pill {
   display: none;
 }
 
-body.touch-mode .hud-bottom {
-  bottom: max(170px, calc(env(safe-area-inset-bottom) + 158px));
-  left: 50%;
-  transform: translateX(-50%);
-  scale: 0.86;
-  gap: 8px;
+body.touch-mode .kill-feed {
+  max-width: 160px;
+  opacity: 0.85;
+  font-size: 0.7rem;
 }
 
-body.touch-mode .prompt {
-  bottom: max(188px, calc(env(safe-area-inset-bottom) + 172px));
+body.touch-mode .kill-feed .entry {
+  padding: 2px 6px;
+  font-size: 0.68rem;
+}
+
+body.touch-mode .alive-pill,
+body.touch-mode .phase-pill {
+  font-size: 1rem;
+  padding: 4px 10px;
+}
+
+body.touch-mode .hud-top {
+  top: max(8px, env(safe-area-inset-top));
+  padding-left: max(52px, calc(env(safe-area-inset-left) + 48px));
 }
 
 body.touch-mode #minimap {
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
+  width: 72px;
+  height: 72px;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  opacity: 0.9;
+}
+
+body.touch-mode .hud-bottom {
+  bottom: max(152px, calc(env(safe-area-inset-bottom) + 140px));
+  left: 50%;
+  transform: translateX(-50%);
+  scale: 0.82;
+  gap: 8px;
+}
+
+body.touch-mode .weapon-block {
+  min-width: 110px;
+  padding: 6px 10px;
+}
+
+body.touch-mode .hp-block {
+  width: 150px;
+}
+
+body.touch-mode .prompt {
+  bottom: max(168px, calc(env(safe-area-inset-bottom) + 154px));
+  font-size: 0.82rem;
+  max-width: 70vw;
+  text-align: center;
+}
+
+body.touch-mode .drop-banner {
+  font-size: 1.45rem;
+  top: 24%;
+}
+
+body.touch-mode .heal-rail .mbtn.heal {
+  min-width: 44px;
+  min-height: 36px;
+  opacity: 0.9;
 }
 
 body.playing {
   overscroll-behavior: none;
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+body.playing #app {
   width: 100%;
   height: 100%;
 }
@@ -817,9 +887,10 @@ body.playing {
   .row { grid-template-columns: 1fr; }
   .lobby-content { padding: 1.25rem 1rem max(2rem, env(safe-area-inset-bottom)); }
   .cta { width: 100%; }
-  .stick-pad { width: 132px; height: 132px; }
-  .stick-pad .stick-base { width: 100px; height: 100px; margin: -50px 0 0 -50px; }
-  .fire-btn { width: 84px; height: 84px; font-size: 1.1rem; }
+  .stick-pad { width: 124px; height: 124px; }
+  .stick-pad .stick-base { width: 96px; height: 96px; margin: -48px 0 0 -48px; }
+  .fire-btn { width: 80px; height: 80px; font-size: 1.05rem; }
+  .mbtn.jump { width: 56px; height: 56px; min-width: 56px; font-size: 0.85rem; }
 }
 
 @media (pointer: coarse), (max-width: 900px) and (hover: none) {
@@ -830,8 +901,10 @@ body.playing {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .stick-pad { width: 118px; height: 118px; }
-  .fire-btn { width: 76px; height: 76px; }
+  .stick-pad { width: 110px; height: 110px; }
+  .fire-btn { width: 72px; height: 72px; }
   .heal-rail { flex-direction: row; }
-  body.touch-mode .hud-bottom { bottom: max(130px, calc(env(safe-area-inset-bottom) + 118px)); }
+  body.touch-mode .hud-bottom { bottom: max(118px, calc(env(safe-area-inset-bottom) + 108px)); }
+  body.touch-mode #minimap { width: 64px; height: 64px; }
+  body.touch-mode .kill-feed { display: none; }
 }
