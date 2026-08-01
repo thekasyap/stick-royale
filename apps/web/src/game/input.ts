@@ -1,9 +1,9 @@
 /**
  * Desktop: keyboard + mouse.
- * Mobile (PUBG-style twin-stick):
- *   Left stick  → move
- *   Right stick → aim (relative to player / screen center)
- *   FIRE        → shoot along aim
+ * Mobile (Mini Militia–style):
+ *   Left floating stick  → move (appears under thumb)
+ *   Right floating stick → aim; optional Fire+ (shoot while aiming)
+ *   FIRE / JUMP / GRENADE / WPN / RLD buttons
  */
 export class Input {
   keys = new Set<string>();
@@ -13,13 +13,16 @@ export class Input {
   mouseRight = false;
   wheelDelta = 0;
   autoLoot = false;
-  /** Aim stick / mouse scale from settings (0.5–2) */
+  /** Mini Militia Fire+: shoot when aim stick is pushed */
+  fireOnAim = true;
   sensitivity = 1;
   private justPressed = new Set<string>();
   touchMove = { x: 0, y: 0 };
   aimStick = { x: 1, y: 0 };
   touchFire = false;
   fireBtnActive = false;
+  /** Aim-stick is actively held past fire threshold */
+  aimFiring = false;
 
   stickVisible = false;
   stickBase = { x: 0, y: 0 };
@@ -35,6 +38,8 @@ export class Input {
   private usingTouch = false;
   private viewW = 1280;
   private viewH = 720;
+  private weaponSlot = 0;
+  private fireBtnHeld = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.mouseX = this.viewW * 0.5 + 180;
@@ -51,7 +56,6 @@ export class Input {
     window.addEventListener("keyup", (e) => {
       this.keys.delete(e.key.toLowerCase());
     });
-    // Global mouse up — release outside canvas must not stick FIRE/ADS
     window.addEventListener("mouseup", (e) => {
       if (this.usingTouch) return;
       if (e.button === 0) this.mouseDown = false;
@@ -91,9 +95,10 @@ export class Input {
     if (this.usingTouch) this.applyAimToMouse();
   }
 
-  enableTouchMode(autoLoot = true): void {
+  enableTouchMode(autoLoot = true, fireOnAim = true): void {
     this.usingTouch = true;
     this.autoLoot = autoLoot;
+    this.fireOnAim = fireOnAim;
     this.aimStick = { x: 1, y: 0 };
     this.applyAimToMouse();
   }
@@ -102,7 +107,6 @@ export class Input {
     return this.usingTouch;
   }
 
-  /** Clear stuck sticks / fire / keys after blur, pause, or lost capture */
   resetPointers(): void {
     this.stickPointerId = null;
     this.aimPointerId = null;
@@ -111,6 +115,8 @@ export class Input {
     this.touchMove = { x: 0, y: 0 };
     this.stickVisible = false;
     this.aimVisible = false;
+    this.fireBtnHeld = false;
+    this.aimFiring = false;
     this.mouseDown = false;
     this.mouseRight = false;
     this.touchFire = false;
@@ -118,108 +124,168 @@ export class Input {
     this.keys.clear();
   }
 
-  bindStickPad(el: HTMLElement): void {
-    el.addEventListener("pointerdown", (e) => {
+  /**
+   * Mini Militia floating stick zones — stick appears under the thumb.
+   * zoneEl: full left/right half; stickEl: the visual that we reposition.
+   */
+  bindFloatingStick(
+    zoneEl: HTMLElement,
+    stickEl: HTMLElement,
+    kind: "move" | "aim",
+  ): void {
+    const radius = 52;
+
+    zoneEl.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (kind === "move" && this.stickPointerId !== null) return;
+      if (kind === "aim" && this.aimPointerId !== null) return;
       e.preventDefault();
-      e.stopPropagation();
       this.usingTouch = true;
-      if (this.stickPointerId !== null) return;
-      try { el.setPointerCapture(e.pointerId); } catch { /* */ }
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      this.stickPointerId = e.pointerId;
-      this.stickOrigin = { x: rect.width / 2, y: rect.height / 2 };
-      this.stickBase = { x: this.stickOrigin.x, y: this.stickOrigin.y };
-      this.stickKnob = { x, y };
-      this.stickVisible = true;
-      this.updateStickVector(x, y, rect.width, rect.height);
+      try { zoneEl.setPointerCapture(e.pointerId); } catch { /* */ }
+
+      const zr = zoneEl.getBoundingClientRect();
+      const x = e.clientX - zr.left;
+      const y = e.clientY - zr.top;
+
+      // Position visual stick under finger (clamped inside zone)
+      const half = 60;
+      const cx = Math.max(half, Math.min(zr.width - half, x));
+      const cy = Math.max(half, Math.min(zr.height - half, y));
+      stickEl.style.left = `${cx - half}px`;
+      stickEl.style.top = `${cy - half}px`;
+      stickEl.classList.add("active", "shown");
+
+      if (kind === "move") {
+        this.stickPointerId = e.pointerId;
+        this.stickOrigin = { x: cx, y: cy };
+        this.stickBase = { x: cx, y: cy };
+        this.stickKnob = { x, y };
+        this.stickVisible = true;
+        this.updateStickVector(x, y, cx, cy, radius);
+        this.syncKnobVisual(stickEl, this.stickOrigin, x, y, radius);
+      } else {
+        this.aimPointerId = e.pointerId;
+        this.aimOrigin = { x: cx, y: cy };
+        this.aimBase = { x: cx, y: cy };
+        this.aimKnob = { x, y };
+        this.aimVisible = true;
+        this.updateAimVector(x, y, cx, cy, radius);
+        this.syncKnobVisual(stickEl, this.aimOrigin, x, y, radius);
+      }
     });
-    el.addEventListener("pointermove", (e) => {
-      if (e.pointerId !== this.stickPointerId || !this.stickOrigin) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      this.stickKnob = { x, y };
-      this.updateStickVector(x, y, rect.width, rect.height);
+
+    zoneEl.addEventListener("pointermove", (e) => {
+      const zr = zoneEl.getBoundingClientRect();
+      const x = e.clientX - zr.left;
+      const y = e.clientY - zr.top;
+      if (kind === "move" && e.pointerId === this.stickPointerId && this.stickOrigin) {
+        e.preventDefault();
+        this.stickKnob = { x, y };
+        this.updateStickVector(x, y, this.stickOrigin.x, this.stickOrigin.y, radius);
+        this.syncKnobVisual(stickEl, this.stickOrigin, x, y, radius);
+      }
+      if (kind === "aim" && e.pointerId === this.aimPointerId && this.aimOrigin) {
+        e.preventDefault();
+        this.aimKnob = { x, y };
+        this.updateAimVector(x, y, this.aimOrigin.x, this.aimOrigin.y, radius);
+        this.syncKnobVisual(stickEl, this.aimOrigin, x, y, radius);
+      }
     });
+
     const end = (e: PointerEvent) => {
-      if (e.pointerId !== this.stickPointerId) return;
-      this.stickPointerId = null;
-      this.stickOrigin = null;
-      this.touchMove = { x: 0, y: 0 };
-      this.stickVisible = false;
+      if (kind === "move" && e.pointerId === this.stickPointerId) {
+        this.stickPointerId = null;
+        this.stickOrigin = null;
+        this.touchMove = { x: 0, y: 0 };
+        this.stickVisible = false;
+        stickEl.classList.remove("active", "shown");
+        const knob = stickEl.querySelector(".stick-knob") as HTMLElement | null;
+        if (knob) knob.style.transform = "translate(0,0)";
+      }
+      if (kind === "aim" && e.pointerId === this.aimPointerId) {
+        this.aimPointerId = null;
+        this.aimOrigin = null;
+        this.aimVisible = false;
+        this.aimFiring = false;
+        this.refreshFireState();
+        stickEl.classList.remove("active", "shown");
+        const knob = stickEl.querySelector(".stick-knob") as HTMLElement | null;
+        if (knob) knob.style.transform = "translate(0,0)";
+      }
     };
-    el.addEventListener("pointerup", end);
-    el.addEventListener("pointercancel", end);
-    el.addEventListener("lostpointercapture", end);
+    zoneEl.addEventListener("pointerup", end);
+    zoneEl.addEventListener("pointercancel", end);
+    zoneEl.addEventListener("lostpointercapture", end);
   }
 
-  bindAimPad(el: HTMLElement): void {
-    el.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.usingTouch = true;
-      if (this.aimPointerId !== null) return;
-      try { el.setPointerCapture(e.pointerId); } catch { /* */ }
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      this.aimPointerId = e.pointerId;
-      this.aimOrigin = { x: rect.width / 2, y: rect.height / 2 };
-      this.aimBase = { x: this.aimOrigin.x, y: this.aimOrigin.y };
-      this.aimKnob = { x, y };
-      this.aimVisible = true;
-      this.updateAimVector(x, y, rect.width, rect.height);
-    });
-    el.addEventListener("pointermove", (e) => {
-      if (e.pointerId !== this.aimPointerId || !this.aimOrigin) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      this.aimKnob = { x, y };
-      this.updateAimVector(x, y, rect.width, rect.height);
-    });
-    const end = (e: PointerEvent) => {
-      if (e.pointerId !== this.aimPointerId) return;
-      this.aimPointerId = null;
-      this.aimOrigin = null;
-      this.aimVisible = false;
-    };
-    el.addEventListener("pointerup", end);
-    el.addEventListener("pointercancel", end);
-    el.addEventListener("lostpointercapture", end);
+  private syncKnobVisual(
+    stickEl: HTMLElement,
+    origin: { x: number; y: number },
+    x: number,
+    y: number,
+    max: number,
+  ): void {
+    const knob = stickEl.querySelector(".stick-knob") as HTMLElement | null;
+    if (!knob) return;
+    const dx = x - origin.x;
+    const dy = y - origin.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const mag = Math.min(max, len);
+    knob.style.transform = `translate(${(dx / len) * mag}px, ${(dy / len) * mag}px)`;
   }
 
-  private updateStickVector(x: number, y: number, w: number, h: number): void {
-    const cx = w / 2;
-    const cy = h / 2;
+  private updateStickVector(x: number, y: number, cx: number, cy: number, max: number): void {
     const dx = x - cx;
     const dy = y - cy;
     const len = Math.hypot(dx, dy) || 1;
-    const max = Math.min(w, h) * 0.38;
     const mag = Math.min(1, len / max);
     this.touchMove = { x: (dx / len) * mag, y: (dy / len) * mag };
   }
 
-  private updateAimVector(x: number, y: number, w: number, h: number): void {
-    const cx = w / 2;
-    const cy = h / 2;
+  private updateAimVector(x: number, y: number, cx: number, cy: number, max: number): void {
     const dx = (x - cx) * this.sensitivity;
     const dy = (y - cy) * this.sensitivity;
     const len = Math.hypot(dx, dy) || 1;
-    const max = Math.min(w, h) * 0.38;
-    const mag = Math.min(1, Math.max(0.25, len / max));
+    const mag = Math.min(1, Math.max(0.2, len / max));
     this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
     this.applyAimToMouse();
+    // Mini Militia Fire+: holding aim stick past ~35% also shoots
+    this.aimFiring = this.fireOnAim && mag >= 0.35;
+    this.refreshFireState();
+  }
+
+  private refreshFireState(): void {
+    const on = this.fireBtnHeld || this.aimFiring;
+    this.mouseDown = on;
+    this.touchFire = on;
+    this.fireBtnActive = this.fireBtnHeld;
+  }
+
+  setFireButton(held: boolean): void {
+    this.fireBtnHeld = held;
+    this.refreshFireState();
+  }
+
+  /** Cycle primary ↔ sidearm ↔ melee (Mini Militia weapon switch) */
+  cycleWeapon(): void {
+    this.weaponSlot = (this.weaponSlot + 1) % 3;
+    const key = String(this.weaponSlot + 1);
+    this.injectPress(key);
+  }
+
+  /** Switch to throwables and hold fire (grenade) */
+  startGrenade(): void {
+    this.injectPress("4");
+    this.setFireButton(true);
+  }
+
+  endGrenade(): void {
+    this.setFireButton(false);
+    this.injectRelease("4");
   }
 
   private applyAimToMouse(): void {
-    const reach = Math.min(this.viewW, this.viewH) * 0.35;
+    const reach = Math.min(this.viewW, this.viewH) * 0.38;
     this.mouseX = this.viewW / 2 + this.aimStick.x * reach;
     this.mouseY = this.viewH / 2 + this.aimStick.y * reach;
   }

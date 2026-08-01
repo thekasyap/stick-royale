@@ -1,21 +1,20 @@
-/** Persistent player preferences (localStorage) */
-
 export type Settings = {
   audio: boolean;
   haptics: boolean;
   autoLoot: boolean;
-  /** 0.5 – 2.0 stick / mouse aim scale */
+  /** Mini Militia Fire+: shooting while holding aim stick */
+  fireOnAim: boolean;
   sensitivity: number;
-  /** Prefer main-thread sim (more stable on phones) */
   lowPower: boolean;
 };
 
-const KEY = "stick_royale_settings";
+const KEY = "stick-royale-settings-v2";
 
 const DEFAULTS: Settings = {
   audio: true,
   haptics: true,
   autoLoot: true,
+  fireOnAim: true,
   sensitivity: 1,
   lowPower: false,
 };
@@ -23,23 +22,13 @@ const DEFAULTS: Settings = {
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) {
-      // migrate legacy audio key
-      const legacy = localStorage.getItem("stick_royale_audio");
-      return {
-        ...DEFAULTS,
-        audio: legacy !== "0",
-        // Phones: default low-power (main-thread) for stability
-        lowPower:
-          typeof matchMedia === "function" &&
-          (matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0),
-      };
-    }
+    if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
     return {
       audio: parsed.audio ?? DEFAULTS.audio,
       haptics: parsed.haptics ?? DEFAULTS.haptics,
       autoLoot: parsed.autoLoot ?? DEFAULTS.autoLoot,
+      fireOnAim: parsed.fireOnAim ?? DEFAULTS.fireOnAim,
       sensitivity: clampSens(parsed.sensitivity ?? DEFAULTS.sensitivity),
       lowPower: parsed.lowPower ?? DEFAULTS.lowPower,
     };
@@ -49,11 +38,14 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(s: Settings): void {
-  localStorage.setItem(KEY, JSON.stringify(s));
-  localStorage.setItem("stick_royale_audio", s.audio ? "1" : "0");
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {
+    /* private mode */
+  }
 }
 
 function clampSens(n: number): number {
   if (!Number.isFinite(n)) return 1;
-  return Math.max(0.5, Math.min(2, n));
+  return Math.min(1.6, Math.max(0.6, n));
 }
