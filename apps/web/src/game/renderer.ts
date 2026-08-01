@@ -42,7 +42,14 @@ export class Renderer {
       y >= this.view.t - pad && y <= this.view.b + pad;
   }
 
-  draw(world: RenderBundle, w: number, h: number, mouseX = w / 2, mouseY = h / 2): void {
+  draw(
+    world: RenderBundle,
+    w: number,
+    h: number,
+    mouseX = w / 2,
+    mouseY = h / 2,
+    opts: { compactHud?: boolean } = {},
+  ): void {
     const { ctx } = this;
     const cam = world.camera;
     const halfW = (w / 2) / cam.zoom;
@@ -56,6 +63,7 @@ export class Renderer {
 
     ctx.save();
     ctx.clearRect(0, 0, w, h);
+    // Match page chrome so any letterboxing isn't stark black bars
     ctx.fillStyle = "#1a2218";
     ctx.fillRect(0, 0, w, h);
 
@@ -82,7 +90,7 @@ export class Renderer {
     ctx.restore();
     this.drawCrosshair(mouseX, mouseY, world);
     this.drawDamageChevron(world, w, h);
-    this.drawCompass(world, w);
+    if (!opts.compactHud) this.drawCompass(world, w);
     this.drawKillToast(world, w);
     this.drawMinimap(world);
   }
@@ -212,6 +220,14 @@ export class Renderer {
 
   private drawTerrain(map: IslandMap): void {
     const { ctx } = this;
+    // Soft void beyond the island so camera edges never look like "missing tiles"
+    const pad = 800;
+    ctx.fillStyle = "#121810";
+    ctx.fillRect(-pad, -pad, MAP_SIZE + pad * 2, MAP_SIZE + pad * 2);
+    // Beach ring
+    ctx.fillStyle = "#2a3224";
+    ctx.fillRect(-40, -40, MAP_SIZE + 80, MAP_SIZE + 80);
+
     ctx.fillStyle = this.grassPattern ?? GRASS_A;
     ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
 
@@ -444,29 +460,25 @@ export class Renderer {
     ctx.save();
     ctx.translate(f.x, f.y);
 
+    // Shadow stays world-aligned (under feet)
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
     if (f.state === "parachute") {
       ctx.fillStyle = "rgba(240,232,216,0.35)";
       ctx.beginPath();
-      ctx.arc(0, -36, 22, Math.PI, 0);
+      ctx.arc(0, 0, 26, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(240,232,216,0.5)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(-18, -30);
-      ctx.lineTo(0, -8);
-      ctx.lineTo(18, -30);
-      ctx.stroke();
     }
 
-    // shadow
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.beginPath();
-    ctx.ellipse(0, 8, 10, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
+    // +X = facing / aim — never "upside down" when aiming left
     ctx.rotate(f.aim);
+    if (f.state === "downed") {
+      ctx.rotate(-Math.PI / 2.2);
+    }
 
-    // Surviv.io-style: enemies must read clearly on olive ground
     const flashing = (f.hitFlash ?? 0) > 0;
     const body = flashing
       ? "#fff4e0"
@@ -477,99 +489,94 @@ export class Renderer {
           : "#8b3a2a";
     const accent = isPlayer ? "#d4a04a" : isAlly ? "#4a8f5a" : "#e07040";
     const moving = Math.hypot(f.vx, f.vy) > 5 || f.state === "parachute";
-    const legSwing = f.state === "alive" && moving ? Math.sin(f.animPhase ?? 0) * 4 : 0;
+    const legSwing = f.state === "alive" && moving ? Math.sin(f.animPhase ?? 0) * 3.5 : 0;
 
-    // legs
     ctx.strokeStyle = body;
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
+
+    // Legs behind the body (toward -X), spread on Y
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(-5 + legSwing, 12);
+    ctx.lineTo(-10, 5 + legSwing);
     ctx.moveTo(0, 0);
-    ctx.lineTo(5 - legSwing, 12);
+    ctx.lineTo(-10, -5 - legSwing);
     ctx.stroke();
 
-    if (f.state === "downed") {
-      ctx.rotate(-Math.PI / 2.2);
-    }
-
-    // torso
+    // Torso along facing (+X)
     ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, -14);
+    ctx.moveTo(-2, 0);
+    ctx.lineTo(12, 0);
     ctx.stroke();
 
-    // arms + weapon
+    // Arms
+    ctx.beginPath();
+    ctx.moveTo(6, 0);
+    ctx.lineTo(10, 7);
+    ctx.moveTo(6, 0);
+    ctx.lineTo(11, -5);
+    ctx.stroke();
+
     const gun = activeWeapon(f);
-    ctx.beginPath();
-    ctx.moveTo(0, -10);
-    ctx.lineTo(10, -6);
-    ctx.moveTo(0, -10);
-    ctx.lineTo(-8, -4);
-    ctx.stroke();
-
     if (gun && WEAPONS[gun.weaponId]?.category !== "melee") {
       ctx.strokeStyle = accent;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(8, -6);
-      ctx.lineTo(22, -6);
+      ctx.moveTo(10, -2);
+      ctx.lineTo(24, -2);
       ctx.stroke();
     } else {
-      // pan
       ctx.strokeStyle = "#888";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(8, -6);
-      ctx.lineTo(16, -6);
+      ctx.moveTo(10, -2);
+      ctx.lineTo(18, -2);
       ctx.stroke();
       ctx.fillStyle = "#aaa";
       ctx.beginPath();
-      ctx.arc(18, -6, 5, 0, Math.PI * 2);
+      ctx.arc(20, -2, 5, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // head
+    // Head toward facing (+X) — always the "front"
     ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.arc(0, -20, 6, 0, Math.PI * 2);
+    ctx.arc(17, 0, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.35)";
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // helmet hint
     if (f.helmet > 0) {
       ctx.strokeStyle = f.helmet >= 3 ? "#d4a04a" : f.helmet === 2 ? "#a0a0b0" : "#8a7a60";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(0, -20, 7, Math.PI, 0);
+      ctx.arc(17, 0, 7.5, -Math.PI * 0.65, Math.PI * 0.65);
       ctx.stroke();
     }
-    // vest thickness by level
     if (f.vest > 0) {
       ctx.strokeStyle = f.vest >= 3 ? "#d4a04a" : f.vest === 2 ? "#a0a0b0" : "#8a7a60";
       ctx.lineWidth = 1 + f.vest;
       ctx.beginPath();
-      ctx.moveTo(0, -2);
-      ctx.lineTo(0, -12);
+      ctx.moveTo(2, 0);
+      ctx.lineTo(11, 0);
       ctx.stroke();
     }
 
     ctx.restore();
 
-    // Surviv.io readability: ALWAYS show name + HP for anyone on screen
+    // Labels stay screen-upright (drawn in world space, not rotated with body)
     ctx.save();
     ctx.font = "600 11px 'IBM Plex Sans', sans-serif";
     ctx.textAlign = "center";
     ctx.fillStyle = isPlayer ? "#d4a04a" : isAlly ? "#8fd49a" : "#f0c8b0";
-    ctx.fillText(f.name, f.x, f.y - 38);
+    // Only name for non-player on mobile density — HP bar always for combat readability
+    ctx.fillText(f.name, f.x, f.y - 28);
     if (f.state === "alive" || f.state === "downed") {
-      const hw = 32;
+      const hw = 28;
       const hpRatio = Math.max(0, Math.min(1, f.hp / 100));
       ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(f.x - hw / 2, f.y - 34, hw, 4);
+      ctx.fillRect(f.x - hw / 2, f.y - 24, hw, 3.5);
       ctx.fillStyle =
         f.state === "downed"
           ? "#c45c2a"
@@ -578,27 +585,27 @@ export class Renderer {
             : hpRatio > 0.25
               ? "#d4a04a"
               : "#c45c2a";
-      ctx.fillRect(f.x - hw / 2, f.y - 34, hw * hpRatio, 4);
-      if (f.helmet > 0 || f.vest > 0) {
+      ctx.fillRect(f.x - hw / 2, f.y - 24, hw * hpRatio, 3.5);
+      if (isPlayer && (f.helmet > 0 || f.vest > 0)) {
         ctx.fillStyle = "rgba(240,232,216,0.7)";
         ctx.font = "9px 'IBM Plex Sans'";
-        ctx.fillText(`H${f.helmet} V${f.vest}`, f.x, f.y - 42);
+        ctx.fillText(`H${f.helmet} V${f.vest}`, f.x, f.y - 32);
       }
     }
     if (f.state === "downed") {
       ctx.fillStyle = "#c45c2a";
       ctx.font = "700 10px 'IBM Plex Sans'";
-      ctx.fillText("DOWNED", f.x, f.y + 22);
+      ctx.fillText("DOWNED", f.x, f.y + 20);
     }
     if (f.healTimer > 0) {
       ctx.fillStyle = "#d4a04a";
       ctx.font = "10px 'IBM Plex Sans'";
-      ctx.fillText("Healing…", f.x, f.y + 22);
+      ctx.fillText("Healing…", f.x, f.y + 20);
     }
     if (f.reloadTimer > 0 && (isPlayer || isAlly)) {
       ctx.fillStyle = "#d4a04a";
       ctx.font = "10px 'IBM Plex Sans'";
-      ctx.fillText("Reloading…", f.x, f.y + 22);
+      ctx.fillText("Reloading…", f.x, f.y + 20);
     }
     ctx.restore();
   }
