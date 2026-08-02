@@ -57,7 +57,7 @@
                 Difficulty
                 <select id="difficulty">
                   <option value="easy" selected>Easy</option>
-                  <option value="normal">Normal</option>
+                  <option value="normal">Medium</option>
                   <option value="hard">Hard</option>
                 </select>
               </label>
@@ -89,10 +89,6 @@
           <label class="toggle">
             <input type="checkbox" id="set-autoloot" />
             <span>Auto-loot</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="set-fireonaaim" />
-            <span>Fire+ (aim stick also shoots — optional)</span>
           </label>
           <label class="toggle">
             <input type="checkbox" id="set-lowpower" />
@@ -142,7 +138,7 @@
         <div id="prompt" class="prompt"></div>
         <div id="drop-banner" class="drop-banner hidden">JUMP</div>
         <div id="mobile-tip" class="mobile-tip hidden">
-          Left move · Right aim · Hold FIRE to shoot · JUMP to drop
+          Left move · Right pull to aim+shoot · Heals around JUMP
         </div>
 
         <div id="touch-ui" class="touch-ui militia" aria-hidden="true">
@@ -158,6 +154,7 @@
               <div class="stick-base" id="aim-base">
                 <div class="stick-knob" id="aim-knob"></div>
               </div>
+              <div class="aim-fire-hint">AIM</div>
             </div>
           </div>
 
@@ -167,13 +164,25 @@
               <button type="button" data-key="r" class="mbtn mil" id="reload-btn">RLD</button>
               <button type="button" data-action="weapon" class="mbtn mil" id="wpn-btn">WPN</button>
               <button type="button" data-action="grenade" class="mbtn mil bomb" id="grenade-btn">BOMB</button>
-            </div>
-            <div class="militia-row mid-row">
               <button type="button" data-ads class="mbtn mil" id="ads-btn">ADS</button>
-              <button type="button" data-key="q" class="mbtn mil heal">+</button>
-              <button type="button" data-key=" " class="mbtn mil jump" id="jump-btn">JUMP</button>
             </div>
-            <button type="button" id="fire-btn" class="fire-btn mil-fire" aria-label="Fire">FIRE</button>
+
+            <!-- Radial heals around JUMP (space freed by removing FIRE) -->
+            <div class="heal-orbit" id="heal-orbit" aria-label="Heals">
+              <button type="button" data-key="q" class="heal-orb band" style="--a:-135deg" id="orb-band">
+                <span>BAN</span><em id="orb-band-n">0</em>
+              </button>
+              <button type="button" data-key="c" class="heal-orb med" style="--a:-45deg" id="orb-med">
+                <span>MED</span><em id="orb-med-n">0</em>
+              </button>
+              <button type="button" data-key="z" class="heal-orb drink" style="--a:45deg" id="orb-drink">
+                <span>DRK</span><em id="orb-drink-n">0</em>
+              </button>
+              <button type="button" data-key="x" class="heal-orb pain" style="--a:135deg" id="orb-pain">
+                <span>PNK</span><em id="orb-pain-n">0</em>
+              </button>
+              <button type="button" data-key=" " class="mbtn mil jump orbit-jump" id="jump-btn">JUMP</button>
+            </div>
           </div>
         </div>
       </div>
