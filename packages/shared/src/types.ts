@@ -89,8 +89,10 @@ export interface LootTierWeights {
 }
 
 export const LOBBY_SIZE = 48;
-/** Practice (VS AI) — far fewer bots so phones stay smooth */
+/** Practice Arena — compact fight, phones stay smooth */
 export const PRACTICE_LOBBY_SIZE = 12;
+/** Practice win condition: get this many kills (bots respawn) */
+export const PRACTICE_KILL_TARGET = 8;
 export const TICK_RATE = 20;
 export const MAP_SIZE = 2400;
 export const PLAYER_RADIUS = 12;

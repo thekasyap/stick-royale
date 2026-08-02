@@ -6,6 +6,7 @@ import {
   PLAYER_ADS_SPEED,
   PLAYER_SPEED,
   POIS,
+  PRACTICE_KILL_TARGET,
   PRACTICE_LOBBY_SIZE,
   REVIVE_RANGE,
   STARTER_MELEE,
@@ -58,7 +59,7 @@ import {
   type Vehicle,
 } from "./midgame";
 import { angleTo, clamp, createRng, dist } from "./math";
-import { createZone, outsideBlue, updateZone, zonePhaseLabel, type ZoneState } from "./zone";
+import { createPracticeZone, createZone, outsideBlue, updateZone, zonePhaseLabel, type ZoneState } from "./zone";
 import { tickReload } from "./combat";
 
 export type KillFeedEntry = { killer: string; victim: string; weapon: string; t: number; knocked?: boolean };
@@ -86,6 +87,9 @@ export type MatchResult = {
   damage: number;
   winner: boolean;
   aliveTime: number;
+  mode: GameMode;
+  /** Practice kill-race headline / BR placement line */
+  subtitle?: string;
 };
 
 export class World {
@@ -151,6 +155,9 @@ export class World {
   private zoneStarted = false;
   private lootSeq = 0;
   private lastAds = false;
+  /** Practice: bots scheduled to respawn at `at` match time */
+  private practiceRespawns: { id: string; at: number }[] = [];
+  private practiceHome = { x: 1200, y: 1200 };
 
   constructor(config: MatchConfig, _audio?: unknown, startedAtMs?: number) {
     this.nowMs = () => Date.now();
@@ -159,7 +166,8 @@ export class World {
     this.difficulty = config.difficulty;
     this.mode = config.mode;
     this.partySize = config.partySize;
-    this.allowKnock = config.partySize !== "solo";
+    // Practice is always solo-sparring (no knock / bleed-out without revive)
+    this.allowKnock = this.mode === "vs_ai" ? false : config.partySize !== "solo";
     this.map = generateMap(this.seed);
     this.zone = createZone(this.rng);
     this.vehicles = spawnVehicles(this.rng);
@@ -241,54 +249,115 @@ export class World {
     }
   }
 
-  /** Lightweight Practice: ground spawn, 12 sticks, no plane — mobile-friendly */
+  /**
+   * Practice Arena — not a mini-BR:
+   * clustered spawn, starter AR, fast zone, kill-race with bot respawns.
+   */
   private spawnPractice(nickname: string): void {
     const botCount = PRACTICE_LOBBY_SIZE - 1;
     const names = assignBotNames(botCount, this.seed);
     const home = POIS[Math.floor(this.rng() * POIS.length)]!;
+    this.practiceHome = { x: home.x, y: home.y };
+    this.zone = createPracticeZone(this.rng, this.practiceHome);
 
     this.player = createFighter(
       "player",
       nickname || "StickHero",
-      home.x + (this.rng() - 0.5) * 40,
-      home.y + (this.rng() - 0.5) * 40,
+      home.x + (this.rng() - 0.5) * 36,
+      home.y + (this.rng() - 0.5) * 36,
       false,
     );
     this.player.teamId = 0;
     this.player.state = "alive";
     this.player.chuteAlt = 0;
-    this.player.invuln = 1.2;
-    this.player.heals = { bandage: 5, medkit: 1, energy_drink: 2, painkiller: 1 };
-    this.player.ammo = { "556": 90, "762": 30, "9mm": 90, "12g": 12, "45": 30 };
+    this.player.invuln = 1.5;
+    this.player.heals = { bandage: 8, medkit: 2, energy_drink: 3, painkiller: 2 };
+    this.player.ammo = { "556": 180, "762": 60, "9mm": 120, "12g": 20, "45": 45 };
+    this.player.helmet = 1;
+    this.player.vest = 1;
+    // Starter AR so you fight immediately (unlike Classic pistol drop)
+    const ar = WEAPONS.sparkwave!;
+    this.player.primary = {
+      weaponId: "sparkwave",
+      ammoInMag: ar.magSize,
+      attachments: {},
+    };
+    this.player.activeSlot = 0;
     this.fighters.push(this.player);
 
-    // Skip the plane phase entirely
     this.plane.pathT = 2;
     this.zoneStarted = true;
+    // No care packages / red zones cluttering the arena
+    this.nextCare = 1e9;
+    this.nextRed = 1e9;
 
     for (let i = 0; i < botCount; i++) {
-      const poi = POIS[Math.floor(this.rng() * POIS.length)]!;
+      const ang = (i / botCount) * Math.PI * 2 + this.rng() * 0.3;
+      const rad = 120 + this.rng() * 140;
       const bot = createFighter(
         `bot_${i}`,
         names[i]!,
-        poi.x + (this.rng() - 0.5) * poi.radius,
-        poi.y + (this.rng() - 0.5) * poi.radius,
+        home.x + Math.cos(ang) * rad,
+        home.y + Math.sin(ang) * rad,
         true,
         this.difficulty,
       );
       bot.teamId = i + 1;
       bot.state = "alive";
       bot.chuteAlt = 0;
-      bot.botState = "loot";
-      bot.botTimer = this.rng() * 1.5;
-      bot.invuln = 0.4;
+      bot.botState = "engage";
+      bot.botTimer = this.rng() * 0.8;
+      bot.invuln = 0.35;
+      // Every practice bot starts armed — this is a fight pit, not a loot scramble
+      const wid = this.rng() > 0.45 ? "buzzsaw" : this.rng() > 0.5 ? "sparkwave" : "rattler";
+      const def = WEAPONS[wid]!;
+      bot.primary = { weaponId: wid, ammoInMag: def.magSize, attachments: {} };
+      bot.activeSlot = 0;
+      if (def.ammo) bot.ammo[def.ammo] = 80;
+      bot.helmet = this.rng() > 0.5 ? 1 : 0;
+      bot.vest = this.rng() > 0.4 ? 1 : 0;
       this.fighters.push(bot);
     }
 
-    // Camera snaps to you immediately
     this.camera.x = this.player.x;
     this.camera.y = this.player.y;
-    this.camera.zoom = 1;
+    this.camera.zoom = 1.15;
+    this.seedArenaLoot();
+    this.prompt = `ARENA · Get ${PRACTICE_KILL_TARGET} kills · bots respawn`;
+  }
+
+  /** Hot crates around the arena so practice is fight-first, not loot scavenger hunt. */
+  private seedArenaLoot(): void {
+    const guns = ["buzzsaw", "rattler", "longreach", "sparkwave", "ironclad"] as const;
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      const rad = 70 + (i % 3) * 45;
+      const wid = guns[i % guns.length]!;
+      this.map.loot.push({
+        id: `arena_wpn_${i}`,
+        x: this.practiceHome.x + Math.cos(ang) * rad,
+        y: this.practiceHome.y + Math.sin(ang) * rad,
+        items: [
+          { type: "weapon", weaponId: wid },
+          { type: "ammo", ammo: "556", amount: 60 },
+          { type: "ammo", ammo: "762", amount: 40 },
+        ],
+      });
+    }
+    for (let i = 0; i < 4; i++) {
+      const ang = this.rng() * Math.PI * 2;
+      const rad = 50 + this.rng() * 90;
+      this.map.loot.push({
+        id: `arena_heal_${i}`,
+        x: this.practiceHome.x + Math.cos(ang) * rad,
+        y: this.practiceHome.y + Math.sin(ang) * rad,
+        items: [
+          { type: "heal", healId: "bandage", amount: 5 },
+          { type: "heal", healId: "medkit", amount: 1 },
+          { type: "armor", armorId: i % 2 === 0 ? "vest_2" : "helmet_2" },
+        ],
+      });
+    }
   }
 
   update(dt: number, input: GameInput, viewW: number, viewH: number): void {
@@ -323,6 +392,7 @@ export class World {
           const fired = updateBot(
             f, this.fighters, this.map, this.zone, botDt, this.time,
             this.bullets, this.melees, this.frags, this.smokes, this.rng,
+            this.mode,
           );
           if (fired && dist(f, this.player) < 720) this.sfx.nearbyShots += 1;
         }
@@ -449,12 +519,16 @@ export class World {
 
     this.pings = this.pings.filter((p) => p.until > this.time);
     this.updateCamera(viewW, viewH);
+    this.tickPracticeRespawns();
     this.cleanupLoot();
     this.checkMatchEnd();
     this.killFeed = this.killFeed.filter((k) => this.time - k.t < 5);
   }
 
   private tickMidgame(dt: number): void {
+    // Practice Arena: pure sparring — no care drops / red zones
+    if (this.mode === "vs_ai") return;
+
     this.nextCare -= dt;
     if (this.nextCare <= 0 && this.time > 50) {
       this.nextCare = 90;
@@ -801,6 +875,25 @@ export class World {
   }
 
   private handleKill(attacker: Fighter, victim: Fighter, weaponId: string): void {
+    // Practice bots respawn — deathOrder would block kill credit on 2nd+ deaths
+    if (this.mode === "vs_ai" && victim.isBot) {
+      if (this.practiceRespawns.some((r) => r.id === victim.id)) return;
+      attacker.kills += 1;
+      this.pushFeed(attacker, victim, weaponId, false);
+      if (attacker.id === this.player.id) {
+        this.sfx.kills += 1;
+        this.killToast = { name: victim.name, until: this.time + 2.2 };
+      }
+      this.spawnDeathCrate(victim);
+      if (victim.vehicleId) {
+        const v = this.vehicles.find((x) => x.id === victim.vehicleId);
+        if (v) v.driverId = null;
+        victim.vehicleId = null;
+      }
+      this.practiceRespawns.push({ id: victim.id, at: this.time + 3.5 + this.rng() * 1.5 });
+      return;
+    }
+
     if (this.deathOrder.includes(victim.id)) return;
     this.deathOrder.push(victim.id);
     attacker.kills += 1;
@@ -818,10 +911,14 @@ export class World {
   }
 
   private killFighter(victim: Fighter, attacker: Fighter | null, weaponId: string): void {
-    if (this.deathOrder.includes(victim.id)) return;
+    if (victim.state === "dead") return;
+    // Classic uses deathOrder for placement; practice bots respawn so skip it for them
+    if (this.mode !== "vs_ai" || !victim.isBot) {
+      if (this.deathOrder.includes(victim.id)) return;
+      this.deathOrder.push(victim.id);
+    }
     victim.state = "dead";
     victim.hp = 0;
-    this.deathOrder.push(victim.id);
     if (attacker) {
       attacker.kills += 1;
       this.pushFeed(attacker, victim, weaponId, false);
@@ -839,6 +936,53 @@ export class World {
     }
     if (this.killFeed.length > 6) this.killFeed.length = 6;
     this.spawnDeathCrate(victim);
+
+    if (this.mode === "vs_ai" && victim.isBot) {
+      this.practiceRespawns.push({ id: victim.id, at: this.time + 2.0 + this.rng() * 1.2 });
+      if (attacker?.id === this.player.id) {
+        this.prompt = `ARENA · ${this.player.kills} / ${PRACTICE_KILL_TARGET} kills`;
+      }
+    }
+  }
+
+  private tickPracticeRespawns(): void {
+    if (this.mode !== "vs_ai" || this.matchOver) return;
+    const due = this.practiceRespawns.filter((r) => r.at <= this.time);
+    this.practiceRespawns = this.practiceRespawns.filter((r) => r.at > this.time);
+    for (const r of due) {
+      const bot = this.fighters.find((f) => f.id === r.id);
+      if (!bot || bot.state !== "dead") continue;
+      const ang = this.rng() * Math.PI * 2;
+      const rad = 100 + this.rng() * 160;
+      bot.x = this.practiceHome.x + Math.cos(ang) * rad;
+      bot.y = this.practiceHome.y + Math.sin(ang) * rad;
+      bot.hp = 100;
+      bot.state = "alive";
+      bot.invuln = 1.2;
+      bot.healTimer = 0;
+      bot.healItem = null;
+      bot.botState = "engage";
+      bot.reloadTimer = 0;
+      if (!bot.primary) {
+        const wid = this.rng() > 0.5 ? "buzzsaw" : "sidekick";
+        const def = WEAPONS[wid]!;
+        if (def.slot === "primary") {
+          bot.primary = { weaponId: wid, ammoInMag: def.magSize, attachments: {} };
+          bot.activeSlot = 0;
+        } else {
+          bot.secondary = { weaponId: wid, ammoInMag: def.magSize, attachments: {} };
+          bot.activeSlot = 1;
+        }
+        if (def.ammo) bot.ammo[def.ammo] = (bot.ammo[def.ammo] ?? 0) + 40;
+      } else if (bot.primary) {
+        const def = WEAPONS[bot.primary.weaponId];
+        if (def?.ammo) {
+          bot.primary.ammoInMag = def.magSize;
+          bot.ammo[def.ammo] = Math.max(40, bot.ammo[def.ammo] ?? 0);
+        }
+        bot.activeSlot = 0;
+      }
+    }
   }
 
   private spawnDeathCrate(victim: Fighter): void {
@@ -884,7 +1028,8 @@ export class World {
 
   private updateCamera(viewW: number, viewH: number): void {
     const p = this.player;
-    let targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.65 : 1;
+    const groundZoom = this.mode === "vs_ai" ? 1.18 : 1;
+    let targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.65 : groundZoom;
     // ADS zoom from scope attachment
     if (p.state === "alive") {
       const gun = activeWeapon(p);
@@ -912,12 +1057,45 @@ export class World {
   }
 
   private checkMatchEnd(): void {
+    if (this.matchOver) return;
+
     const playerTeamAlive = this.teamAlive(this.player.teamId);
     const playerEliminated =
       this.player.state === "dead" ||
       (this.player.state === "downed" && !playerTeamAlive.some((f) => f.state === "alive"));
 
-    if (playerEliminated && !this.matchOver) {
+    // —— Practice Arena: kill-race (bots respawn; last-man does not apply) ——
+    if (this.mode === "vs_ai") {
+      if (playerEliminated) {
+        this.matchOver = true;
+        this.result = {
+          placement: PRACTICE_KILL_TARGET,
+          kills: this.player.kills,
+          damage: this.player.damageDealt,
+          winner: false,
+          aliveTime: (this.nowMs() - this.startedAt) / 1000,
+          mode: "vs_ai",
+          subtitle: `${this.player.kills} / ${PRACTICE_KILL_TARGET} kills`,
+        };
+        return;
+      }
+      if (this.player.kills >= PRACTICE_KILL_TARGET) {
+        this.matchOver = true;
+        this.result = {
+          placement: 1,
+          kills: this.player.kills,
+          damage: this.player.damageDealt,
+          winner: true,
+          aliveTime: (this.nowMs() - this.startedAt) / 1000,
+          mode: "vs_ai",
+          subtitle: `${this.player.kills} kills · Arena cleared`,
+        };
+      }
+      return;
+    }
+
+    // —— Classic Battle Royale: last team standing ——
+    if (playerEliminated) {
       const aliveFighters = this.fighters.filter((f) => f.state !== "dead");
       this.matchOver = true;
       this.result = {
@@ -926,14 +1104,12 @@ export class World {
         damage: this.player.damageDealt,
         winner: false,
         aliveTime: (this.nowMs() - this.startedAt) / 1000,
+        mode: "classic",
+        subtitle: `#${Math.max(1, aliveFighters.length + 1)} / ${LOBBY_SIZE}`,
       };
-      /* eliminated sfx — client */
       return;
     }
 
-    // Count anyone still in the match — including plane/parachute.
-    // Filtering only "alive"/"downed" made livingTeams empty at drop start
-    // (everyone is "plane"), so Solo won instantly with Chicken Dinner.
     const livingTeams = new Set(
       this.fighters.filter((f) => f.state !== "dead").map((f) => f.teamId),
     );
@@ -945,8 +1121,9 @@ export class World {
         damage: this.player.damageDealt,
         winner: true,
         aliveTime: (this.nowMs() - this.startedAt) / 1000,
+        mode: "classic",
+        subtitle: `Chicken Dinner · ${this.player.kills} kills`,
       };
-      /* chicken dinner sfx — client */
     }
   }
 
@@ -1011,6 +1188,10 @@ export class World {
       phaseLabel: zonePhaseLabel(this.zone),
       zoneStarted: this.zoneStarted,
       killToast: this.killToast && this.killToast.until > this.time ? this.killToast : null,
+      mode: this.mode,
+      practiceGoal: this.mode === "vs_ai" ? PRACTICE_KILL_TARGET : null,
+      practiceKills: this.mode === "vs_ai" ? this.player.kills : null,
+      practiceHome: this.mode === "vs_ai" ? this.practiceHome : null,
     };
   }
 }

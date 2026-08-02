@@ -1,8 +1,7 @@
 import type { ArmorDef, HealDef, PoiDef, ZonePhase } from "./types.js";
 import { MAP_SIZE } from "./types.js";
 
-/** Blue zone — 7 phases; paced for ~8–12 min classic matches */
-/** Paced for ~10–14 min Classic — phase 1 gives real loot time after drop */
+/** Classic BR — paced for ~10–14 min with real loot time after drop */
 export const ZONE_PHASES: ZonePhase[] = [
   { phase: 1, waitTime: 55, shrinkTime: 35, radius: 980, damagePerSecond: 1 },
   { phase: 2, waitTime: 28, shrinkTime: 28, radius: 680, damagePerSecond: 2 },
@@ -12,6 +11,17 @@ export const ZONE_PHASES: ZonePhase[] = [
   { phase: 6, waitTime: 12, shrinkTime: 14, radius: 70, damagePerSecond: 15 },
   { phase: 7, waitTime: 10, shrinkTime: 12, radius: 22, damagePerSecond: 22 },
 ];
+
+/** Practice Arena — tight, fast (~3–5 min), forces fights */
+export const PRACTICE_ZONE_PHASES: ZonePhase[] = [
+  { phase: 1, waitTime: 18, shrinkTime: 16, radius: 420, damagePerSecond: 2 },
+  { phase: 2, waitTime: 14, shrinkTime: 14, radius: 260, damagePerSecond: 5 },
+  { phase: 3, waitTime: 12, shrinkTime: 12, radius: 150, damagePerSecond: 9 },
+  { phase: 4, waitTime: 10, shrinkTime: 10, radius: 80, damagePerSecond: 14 },
+  { phase: 5, waitTime: 8, shrinkTime: 10, radius: 28, damagePerSecond: 22 },
+];
+
+export const PRACTICE_INITIAL_ZONE_RADIUS = 560;
 
 /** Hand-authored POIs on the island */
 export const POIS: PoiDef[] = [

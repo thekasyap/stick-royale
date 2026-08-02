@@ -68,7 +68,7 @@ console.log("SMOKE OK", {
   phase: mid.phaseLabel,
 });
 
-// Practice (VS AI) — ground spawn, 12 fighters, you are immediately visible/alive
+// Practice Arena — ground spawn, AR, kill-race goal, compact zone
 const practice = new MatchSim({
   nickname: "Trainer",
   mode: "vs_ai",
@@ -82,8 +82,29 @@ if (p0.fighters.length !== 12) {
 if (p0.player.state !== "alive") {
   throw new Error(`practice player should spawn alive, got ${p0.player.state}`);
 }
+if (!p0.player.primary) {
+  throw new Error("practice player should spawn with a primary AR");
+}
+if (p0.practiceGoal !== 8) {
+  throw new Error(`practiceGoal expected 8, got ${p0.practiceGoal}`);
+}
+if (p0.zone.phases.length !== 5) {
+  throw new Error(`practice zone should have 5 phases, got ${p0.zone.phases.length}`);
+}
+if (!p0.practiceHome) {
+  throw new Error("practice should export practiceHome for arena floor");
+}
+const armedBots = p0.fighters.filter((f) => f.isBot && f.primary).length;
+if (armedBots < 10) {
+  throw new Error(`practice bots should all start armed, got ${armedBots}`);
+}
 practice.tick(1 / 20, empty, 800, 600);
 console.log("SMOKE PRACTICE OK", {
   fighters: p0.fighters.length,
   player: p0.player.state,
+  primary: p0.player.primary.weaponId,
+  goal: p0.practiceGoal,
+  zonePhases: p0.zone.phases.length,
+  practiceHome: p0.practiceHome,
+  armedBots,
 });

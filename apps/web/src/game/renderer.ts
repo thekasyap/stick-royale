@@ -73,6 +73,7 @@ export class Renderer {
 
     if (world.map) {
       this.drawTerrain(world.map);
+      this.drawArenaFloor(world);
       this.drawLoot(world.map);
     }
     this.drawZone(world);
@@ -314,23 +315,53 @@ export class Renderer {
     }
   }
 
+  /** Practice-only: scorched fight ring so the arena reads instantly vs open island */
+  private drawArenaFloor(world: RenderBundle): void {
+    if (world.mode !== "vs_ai" || !world.practiceHome) return;
+    const { ctx } = this;
+    const h = world.practiceHome;
+    const r = 280;
+    ctx.save();
+    const g = ctx.createRadialGradient(h.x, h.y, 40, h.x, h.y, r);
+    g.addColorStop(0, "rgba(120, 70, 40, 0.35)");
+    g.addColorStop(0.55, "rgba(90, 55, 35, 0.22)");
+    g.addColorStop(1, "rgba(60, 40, 25, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(224, 112, 64, 0.55)";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, r * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(232, 136, 80, 0.75)";
+    ctx.font = "700 16px 'IBM Plex Sans', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("PRACTICE ARENA", h.x, h.y - r * 0.92 - 10);
+    ctx.restore();
+  }
+
   private drawZone(world: RenderBundle): void {
     const { ctx } = this;
     const z = world.zone;
+    const arena = world.mode === "vs_ai";
     ctx.save();
-    ctx.fillStyle = "rgba(40, 60, 140, 0.28)";
+    ctx.fillStyle = arena ? "rgba(90, 40, 25, 0.32)" : "rgba(40, 60, 140, 0.28)";
     ctx.beginPath();
     ctx.rect(-200, -200, MAP_SIZE + 400, MAP_SIZE + 400);
     ctx.arc(z.blue.x, z.blue.y, z.blue.r, 0, Math.PI * 2, true);
     ctx.fill("evenodd");
 
-    ctx.strokeStyle = "rgba(80, 120, 220, 0.85)";
+    ctx.strokeStyle = arena ? "rgba(224, 112, 64, 0.9)" : "rgba(80, 120, 220, 0.85)";
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(z.blue.x, z.blue.y, z.blue.r, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.strokeStyle = "rgba(240, 240, 240, 0.9)";
+    ctx.strokeStyle = arena ? "rgba(255, 210, 160, 0.85)" : "rgba(240, 240, 240, 0.9)";
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 6]);
     ctx.beginPath();

@@ -11,7 +11,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v6";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v7";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -126,7 +126,7 @@ class GameApp {
       (e) => {
         if (!this.running) return;
         const t = e.target as HTMLElement | null;
-        if (t?.closest?.("button, a, input, select, label, .mbtn, .heal-pill")) return;
+        if (t?.closest?.("button, a, input, select, label, .mbtn, .heal-pill, .mode-card")) return;
         const now = performance.now();
         if (now - lastTap < 320) e.preventDefault();
         lastTap = now;
@@ -363,22 +363,62 @@ class GameApp {
   private bindLobby(): void {
     const nick = $("nickname") as HTMLInputElement;
     nick.value = localStorage.getItem(NICK_KEY) || randomNick();
-    const hint = $("party-hint");
-    hint.textContent = partyHostAvailable()
-      ? "Online party codes available — sim runs in Web Worker when supported."
-      : "Offline 48-player bot-fill. Deploy Cloudflare Worker for online parties.";
+    const modeInput = $("mode") as HTMLInputElement;
+    const syncModeUi = (mode: GameMode) => {
+      modeInput.value = mode;
+      const lobby = $("lobby");
+      lobby.classList.toggle("mode-br", mode === "classic");
+      lobby.classList.toggle("mode-arena", mode === "vs_ai");
+      for (const card of document.querySelectorAll<HTMLButtonElement>(".mode-card")) {
+        const on = card.dataset.mode === mode;
+        card.classList.toggle("active", on);
+        card.setAttribute("aria-checked", on ? "true" : "false");
+      }
+      const arena = mode === "vs_ai";
+      $("lobby-tag").textContent = arena
+        ? "Training · Kill Race · Respawns"
+        : "Offline Solo · Bot Fill";
+      $("lobby-sub").textContent = arena
+        ? "Hot spawn with an AR. Frag 8 bots. They come back for more."
+        : "Drop in. Loot up. Be the last stick standing.";
+      $("start-btn").textContent = arena ? "ENTER ARENA" : "DROP IN";
+      $("mode-feel").textContent = arena
+        ? "Tight arena · ~3–5 min"
+        : "Island drop · ~10–14 min";
+      $("br-extras").classList.toggle("hidden", arena);
+      const hint = $("party-hint");
+      if (arena) {
+        hint.textContent =
+          "Practice is a different game: no plane, kill race to 8, bots respawn, orange arena ring.";
+      } else if (partyHostAvailable()) {
+        hint.textContent =
+          "Battle Royale: plane drop, loot the island, last of 48 standing. Party codes when Worker is live.";
+      } else {
+        hint.textContent =
+          "Battle Royale: plane into 48 sticks. Loot, rotate, survive care packages & the blue zone.";
+      }
+    };
+    $("mode-picker").addEventListener("click", (e) => {
+      const card = (e.target as HTMLElement).closest<HTMLButtonElement>(".mode-card");
+      if (!card?.dataset.mode) return;
+      syncModeUi(card.dataset.mode as GameMode);
+    });
+    syncModeUi((modeInput.value as GameMode) || "classic");
 
     $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       this.audio.unlock();
       const nickname = nick.value.trim().slice(0, 16) || "StickHero";
       localStorage.setItem(NICK_KEY, nickname);
-      const mode = ($("mode") as HTMLSelectElement).value as GameMode;
-      const partySize = ($("party-size") as HTMLSelectElement).value as PartySize;
+      const mode = ($("mode") as HTMLInputElement).value as GameMode;
+      const partySize =
+        mode === "vs_ai"
+          ? "solo"
+          : (($("party-size") as HTMLSelectElement).value as PartySize);
       const difficulty = ($("difficulty") as HTMLSelectElement).value as BotDifficulty;
       const partyCode = ($("party-code") as HTMLInputElement).value.trim().toUpperCase();
 
-      if (!partyCode && partyHostAvailable()) {
+      if (mode === "classic" && !partyCode && partyHostAvailable()) {
         const created = await createParty(nickname);
         if (created) {
           ($("party-code") as HTMLInputElement).value = created.code;
@@ -410,6 +450,8 @@ class GameApp {
     $("hud").classList.remove("hidden");
     document.documentElement.classList.add("playing");
     document.body.classList.add("playing");
+    document.body.classList.toggle("mode-arena", config.mode === "vs_ai");
+    document.body.classList.toggle("mode-classic", config.mode === "classic");
     document.body.classList.remove("lobby-open");
     this.clearAppZoomHacks();
     this.matchSize = config.mode === "vs_ai" ? PRACTICE_LOBBY_SIZE : LOBBY_SIZE;
@@ -445,6 +487,10 @@ class GameApp {
 
   private maybeShowMobileTip(): void {
     const tip = $("mobile-tip");
+    const arena = document.body.classList.contains("mode-arena");
+    tip.textContent = arena
+      ? "PRACTICE: Left MOVE · Right AIM+SHOOT · Kill race meter at top — get 8"
+      : "BR: Left MOVE · Right AIM+SHOOT · Jump from plane · Essentials auto-loot";
     if (localStorage.getItem(MOBILE_TIP_KEY) === "1") {
       tip.classList.add("hidden");
       return;
@@ -541,12 +587,13 @@ class GameApp {
     if (!this.touchMode) this.input.disableTouchMode();
     void this.exitImmersive();
     document.documentElement.classList.remove("playing");
-    document.body.classList.remove("playing", "touch-mode");
+    document.body.classList.remove("playing", "touch-mode", "mode-arena", "mode-classic");
     document.body.classList.add("lobby-open");
     this.clearAppZoomHacks();
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
+    $("race-meter").classList.add("hidden");
     $("settings-modal").classList.add("hidden");
     $("lobby").classList.remove("hidden");
   }
@@ -619,12 +666,41 @@ class GameApp {
   }
 
   private syncHud(bundle: RenderBundle): void {
-    $("alive-count").textContent = String(
-      bundle.fighters.filter((f) => f.state !== "dead").length,
-    );
+    const isArena = bundle.mode === "vs_ai";
+    const badge = $("mode-badge");
+    badge.classList.toggle("arena", isArena);
+    const goal = bundle.practiceGoal ?? 8;
+    const kills = bundle.practiceKills ?? bundle.player.kills;
+    if (isArena) {
+      badge.textContent = "ARENA";
+      $("alive-count").textContent = String(
+        bundle.fighters.filter((f) => f.isBot && f.state !== "dead").length,
+      );
+      $("alive-label").textContent = "BOTS";
+      $("kills-label").textContent = `/${goal}`;
+      $("phase-info").textContent = `RACE · ${bundle.phaseLabel ?? ""}`;
+      const race = $("race-meter");
+      race.classList.remove("hidden");
+      race.setAttribute("aria-hidden", "false");
+      $("race-count").textContent = String(kills);
+      $("race-goal").textContent = String(goal);
+      ($("race-fill") as HTMLDivElement).style.width = `${Math.min(100, (kills / goal) * 100)}%`;
+    } else {
+      badge.textContent = "BR 48";
+      $("alive-count").textContent = String(
+        bundle.fighters.filter((f) => f.state !== "dead").length,
+      );
+      $("alive-label").textContent = "ALIVE";
+      $("kills-label").textContent = "KILLS";
+      $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
+      $("race-meter").classList.add("hidden");
+      $("race-meter").setAttribute("aria-hidden", "true");
+    }
     const kc = $("kill-count");
-    if (kc) kc.textContent = String(bundle.player.kills);
-    $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
+    if (kc) {
+      kc.textContent = String(bundle.player.kills);
+      $("kills-pill").classList.toggle("goal", isArena);
+    }
     const p = bundle.player;
     ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
     ($("boost-fill") as HTMLDivElement).style.width = `${Math.max(0, p.boost)}%`;
@@ -711,11 +787,27 @@ class GameApp {
 
   private showResults(r: NonNullable<RenderBundle["result"]>): void {
     $("hud").classList.add("hidden");
+    $("race-meter").classList.add("hidden");
     $("results").classList.remove("hidden");
     const title = $("results-title");
-    title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+    const card = $("results-card");
+    const arena = r.mode === "vs_ai";
+    card.classList.toggle("arena", arena);
+    $("results-mode").textContent = arena ? "PRACTICE ARENA" : "BATTLE ROYALE";
+    if (arena) {
+      title.textContent = r.winner ? "ARENA CLEARED" : "ARENA FAILED";
+      $("results-place").textContent = r.subtitle ?? `${r.kills} kills`;
+      $("stat-kills-label").textContent = "Eliminations";
+      $("stat-time-label").textContent = "Fight time";
+      $("play-again").textContent = "BACK TO LOBBY";
+    } else {
+      title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+      $("results-place").textContent = r.subtitle ?? `#${r.placement} / ${this.matchSize}`;
+      $("stat-kills-label").textContent = "Kills";
+      $("stat-time-label").textContent = "Survived";
+      $("play-again").textContent = "PLAY AGAIN";
+    }
     title.classList.toggle("winner", r.winner);
-    $("results-place").textContent = `#${r.placement} / ${this.matchSize}`;
     $("stat-kills").textContent = String(r.kills);
     $("stat-damage").textContent = String(Math.round(r.damage));
     $("stat-alive").textContent = `${Math.floor(r.aliveTime)}s`;
