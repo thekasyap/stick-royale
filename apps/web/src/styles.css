@@ -599,11 +599,12 @@ body.lobby-open {
   pointer-events: none;
 }
 
+/* Compact bottom pads — do NOT cover the whole screen (that broke desktop + aiming) */
 .float-zone {
   position: absolute;
-  top: 18%;
-  bottom: 0;
-  width: 46%;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: min(42vw, 220px);
+  height: min(46vh, 240px);
   pointer-events: auto;
   touch-action: none;
   -webkit-user-select: none;
@@ -611,14 +612,11 @@ body.lobby-open {
 }
 
 .move-zone {
-  left: 0;
+  left: max(4px, env(safe-area-inset-left));
 }
 
 .aim-zone {
-  right: 0;
-  width: 42%;
-  /* keep FIRE / JUMP cluster free of stick capture */
-  bottom: 132px;
+  right: max(110px, calc(env(safe-area-inset-right) + 100px));
 }
 
 .float-stick {
@@ -881,15 +879,23 @@ body.playing #app {
   .mbtn.mil { width: 46px; height: 46px; min-width: 46px; }
 }
 
-@media (pointer: coarse), (max-width: 900px) and (hover: none) {
-  body.touch-capable.playing .touch-ui,
-  body.touch-capable.touch-mode .touch-ui {
-    display: block;
+/* Only show sticks when JS marked the device as touch-primary */
+body.touch-capable.playing.touch-mode .touch-ui {
+  display: block;
+}
+
+/* Fine pointer (mouse/trackpad): never let float zones eat clicks */
+@media (hover: hover) and (pointer: fine) {
+  .float-zone {
+    pointer-events: none !important;
+  }
+  body:not(.touch-mode) .touch-ui {
+    display: none !important;
   }
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .float-zone { top: 12%; }
+  .float-zone { width: min(38vw, 190px); height: min(55vh, 200px); }
   .float-stick { width: 100px; height: 100px; }
   .fire-btn, .mil-fire { width: 76px; height: 76px; font-size: 1rem; }
   .mbtn.jump { width: 54px; height: 54px; min-width: 54px; }

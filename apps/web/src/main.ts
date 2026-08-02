@@ -10,7 +10,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip_militia";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v4";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -25,12 +25,9 @@ function $(id: string): HTMLElement {
   return document.getElementById(id)!;
 }
 
-function isTouchCapable(): boolean {
-  return (
-    matchMedia("(pointer: coarse)").matches ||
-    matchMedia("(hover: none)").matches ||
-    navigator.maxTouchPoints > 0
-  );
+/** True phones/tablets — NOT laptops with a touchscreen (those keep mouse). */
+function prefersTouchControls(): boolean {
+  return matchMedia("(hover: none) and (pointer: coarse)").matches;
 }
 
 class GameApp {
@@ -154,9 +151,7 @@ class GameApp {
     this.input.setSensitivity(this.settings.sensitivity);
     this.input.autoLoot = this.settings.autoLoot;
     this.input.fireOnAim = this.settings.fireOnAim;
-    if (this.touchMode) {
-      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
-    }
+    // Do NOT re-call enableTouchMode here — it used to reset aim mid-match
   }
 
   private vibrate(ms: number): void {
@@ -169,13 +164,13 @@ class GameApp {
   }
 
   private detectTouch(): void {
-    if (isTouchCapable()) {
+    if (prefersTouchControls()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
       this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
       const hint = $("controls-hint");
       hint.textContent =
-        "Mini Militia: left MOVE · right AIM (Fire+) · FIRE · JUMP · BOMB · WPN";
+        "Touch: left MOVE · right AIM · FIRE · JUMP · LOOT · WPN · BOMB · Settings → Fire+";
     }
   }
 
@@ -310,6 +305,18 @@ class GameApp {
       }, () => {
         this.input.endGrenade();
         bomb.classList.remove("active");
+      });
+    }
+
+    const ads = root.querySelector("[data-ads]");
+    if (ads) {
+      this.bindBtn(ads, () => {
+        this.audio.unlock();
+        this.input.mouseRight = true;
+        ads.classList.add("active");
+      }, () => {
+        this.input.mouseRight = false;
+        ads.classList.remove("active");
       });
     }
   }
@@ -461,6 +468,7 @@ class GameApp {
     this.bundle = null;
     cancelAnimationFrame(this.raf);
     this.input.resetPointers();
+    if (!this.touchMode) this.input.disableTouchMode();
     void this.exitImmersive();
     document.body.classList.remove("playing", "touch-mode");
     document.body.classList.add("lobby-open");
