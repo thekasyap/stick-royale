@@ -295,7 +295,7 @@ body.lobby-open {
   font-size: 1.2rem;
   border-radius: 8px;
   pointer-events: auto;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .hint {
@@ -590,7 +590,7 @@ body.lobby-open {
   animation: fadeIn 0.35s ease;
 }
 
-/* —— Mini Militia floating twin-stick —— */
+/* —— PUBG twin-stick: full-half zones + contextual overlays —— */
 .touch-ui {
   display: none;
   position: absolute;
@@ -599,59 +599,36 @@ body.lobby-open {
   pointer-events: none;
 }
 
-/* Compact bottom pads — do NOT cover the whole screen (that broke desktop + aiming) */
+/* Full left / right halves — aim works bottom-right too; buttons sit above */
 .float-zone {
   position: absolute;
-  bottom: max(8px, env(safe-area-inset-bottom));
-  width: min(42vw, 220px);
-  height: min(46vh, 240px);
+  top: 8%;
+  bottom: 0;
+  width: 50%;
   pointer-events: auto;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .move-zone {
-  left: max(4px, env(safe-area-inset-left));
+  left: 0;
+  width: 48%;
 }
 
 .aim-zone {
-  right: max(8px, env(safe-area-inset-right));
-  /* leave heal-orbit / JUMP clear on the far-right bottom */
-  bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
-  width: min(40vw, 210px);
-  height: min(42vh, 220px);
+  right: 0;
+  width: 52%;
 }
 
 .float-stick {
   position: absolute;
-  width: 120px;
-  height: 120px;
+  width: 118px;
+  height: 118px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.08s ease;
-}
-
-.aim-fire-hint {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  font-family: var(--font-brand);
-  font-size: 0.7rem;
-  letter-spacing: 0.14em;
-  color: rgba(240, 232, 216, 0.35);
-  pointer-events: none;
-  opacity: 0;
-}
-
-.float-stick.shown .aim-fire-hint {
-  opacity: 0;
-}
-
-.float-stick.firing .aim-fire-hint {
-  opacity: 1;
-  color: rgba(230, 120, 70, 0.85);
 }
 
 .float-stick.shown {
@@ -674,8 +651,8 @@ body.lobby-open {
 }
 
 .float-stick.firing .stick-base {
-  border-color: rgba(224, 96, 48, 0.85);
-  background: rgba(80, 28, 16, 0.45);
+  border-color: rgba(224, 96, 48, 0.9);
+  background: rgba(80, 28, 16, 0.5);
 }
 
 .stick-knob {
@@ -697,48 +674,24 @@ body.lobby-open {
   background: rgba(196, 92, 42, 0.55);
 }
 
-.militia-actions {
+/* Left heal rail — only stocked pills shown */
+.heal-rail {
   position: absolute;
-  right: max(10px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  left: max(10px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  pointer-events: none;
-  z-index: 6;
-}
-
-.militia-row {
-  display: flex;
-  align-items: center;
+  flex-direction: column-reverse;
   gap: 8px;
+  z-index: 7;
   pointer-events: none;
 }
 
-.militia-row > * {
-  pointer-events: auto;
-}
-
-/* Radial heal cluster — BAN / MED / DRK / PNK around JUMP */
-.heal-orbit {
-  position: relative;
-  width: 148px;
-  height: 148px;
-  margin-top: 4px;
-  pointer-events: none;
-}
-
-.heal-orb {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
+.heal-pill {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   border: 1px solid rgba(61, 158, 90, 0.55);
-  background: rgba(16, 36, 22, 0.72);
+  background: rgba(16, 36, 22, 0.78);
   color: #e8f0e4;
   font-family: var(--font-ui);
   font-size: 0.58rem;
@@ -753,37 +706,49 @@ body.lobby-open {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-  transform: rotate(var(--a)) translate(56px) rotate(calc(-1 * var(--a)));
   backdrop-filter: blur(2px);
 }
 
-.heal-orb em {
+.heal-pill.hidden { display: none; }
+
+.heal-pill em {
   font-style: normal;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: #d4a04a;
 }
 
-.heal-orb.empty {
-  opacity: 0.35;
-}
+.heal-pill.band { border-color: rgba(90, 180, 110, 0.7); }
+.heal-pill.med { border-color: rgba(220, 90, 80, 0.75); background: rgba(50, 20, 18, 0.78); }
+.heal-pill.drink { border-color: rgba(80, 160, 220, 0.75); background: rgba(18, 36, 56, 0.78); }
+.heal-pill.pain { border-color: rgba(200, 140, 60, 0.75); background: rgba(48, 36, 14, 0.78); }
 
-.heal-orb.band { border-color: rgba(90, 180, 110, 0.65); }
-.heal-orb.med { border-color: rgba(220, 90, 80, 0.7); background: rgba(50, 20, 18, 0.7); }
-.heal-orb.drink { border-color: rgba(80, 160, 220, 0.7); background: rgba(18, 36, 56, 0.72); }
-.heal-orb.pain { border-color: rgba(200, 140, 60, 0.7); background: rgba(48, 36, 14, 0.72); }
-
-.heal-orb:active,
-.heal-orb.active {
+.heal-pill:active,
+.heal-pill.active {
   filter: brightness(1.2);
-  transform: rotate(var(--a)) translate(56px) rotate(calc(-1 * var(--a))) scale(0.94);
+  transform: scale(0.94);
 }
 
-.orbit-jump {
-  position: absolute !important;
-  left: 50%;
-  top: 50%;
-  margin: -34px 0 0 -34px;
-  z-index: 1;
+/* Right combat cluster — compact, does not block empty aim space */
+.militia-actions {
+  position: absolute;
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.militia-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+}
+
+.militia-row > * {
   pointer-events: auto;
 }
 
@@ -808,12 +773,12 @@ body.lobby-open {
 }
 
 .mbtn.mil {
-  width: 52px;
-  height: 52px;
-  min-width: 52px;
+  width: 50px;
+  height: 50px;
+  min-width: 50px;
   padding: 0;
   border-radius: 50%;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
 }
 
 .mbtn.bomb {
@@ -821,31 +786,57 @@ body.lobby-open {
   background: rgba(70, 42, 12, 0.65);
 }
 
-.mbtn.jump {
-  width: 68px;
-  height: 68px;
-  min-width: 68px;
-  border-radius: 50%;
+.mbtn.loot-btn,
+.mbtn.ride-btn {
+  width: auto;
+  min-width: 64px;
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 24px;
   font-family: var(--font-brand);
-  font-size: 0.95rem;
-  letter-spacing: 0.06em;
-  border-color: rgba(90, 160, 220, 0.7);
-  background: rgba(36, 64, 96, 0.7);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  border-color: rgba(212, 160, 74, 0.75);
+  background: rgba(60, 48, 20, 0.85);
 }
 
-.mbtn.heal {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  font-size: 1.1rem;
-  border-color: rgba(61, 158, 90, 0.55);
-  background: rgba(20, 48, 28, 0.65);
+.mbtn.loot-btn.pulse {
+  animation: lootPulse 0.9s ease-in-out infinite;
+  border-color: rgba(240, 200, 80, 0.95);
 }
+
+@keyframes lootPulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.06); filter: brightness(1.25); }
+}
+
+.mbtn.drop-btn {
+  width: 88px;
+  height: 88px;
+  min-width: 88px;
+  border-radius: 50%;
+  font-family: var(--font-brand);
+  font-size: 1.25rem;
+  letter-spacing: 0.1em;
+  border: 3px solid rgba(90, 170, 230, 0.85);
+  background: radial-gradient(circle at 35% 30%, rgba(90, 150, 210, 0.9), rgba(30, 60, 100, 0.85));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+.mbtn.hidden,
+.heal-rail.hidden,
+.combat-row.hidden { display: none !important; }
 
 .mbtn:active,
 .mbtn.active {
   background: rgba(212, 160, 74, 0.45);
   filter: brightness(1.1);
+}
+
+.mbtn.drop-btn:active,
+.mbtn.drop-btn.active {
+  transform: scale(0.94);
+  filter: brightness(1.15);
 }
 
 body.touch-mode .touch-ui {
@@ -892,11 +883,12 @@ body.touch-mode #minimap {
 }
 
 body.touch-mode .hud-bottom {
-  bottom: max(128px, calc(env(safe-area-inset-bottom) + 118px));
+  bottom: max(96px, calc(env(safe-area-inset-bottom) + 84px));
   left: 50%;
   transform: translateX(-50%);
-  scale: 0.8;
+  scale: 0.78;
   gap: 8px;
+  pointer-events: none;
 }
 
 body.touch-mode .weapon-block {
@@ -909,15 +901,17 @@ body.touch-mode .hp-block {
 }
 
 body.touch-mode .prompt {
-  bottom: max(148px, calc(env(safe-area-inset-bottom) + 136px));
+  bottom: max(108px, calc(env(safe-area-inset-bottom) + 96px));
   font-size: 0.82rem;
-  max-width: 70vw;
+  max-width: 62vw;
   text-align: center;
+  pointer-events: none;
 }
 
 body.touch-mode .drop-banner {
   font-size: 1.45rem;
-  top: 24%;
+  top: 22%;
+  pointer-events: none;
 }
 
 body.playing {
@@ -941,11 +935,10 @@ body.playing #app {
   .row { grid-template-columns: 1fr; }
   .lobby-content { padding: 1.25rem 1rem max(2rem, env(safe-area-inset-bottom)); }
   .cta { width: 100%; }
-  .float-stick { width: 108px; height: 108px; }
-  .heal-orbit { width: 132px; height: 132px; }
-  .heal-orb { width: 44px; height: 44px; margin: -22px 0 0 -22px; transform: rotate(var(--a)) translate(50px) rotate(calc(-1 * var(--a))); }
-  .mbtn.jump, .orbit-jump { width: 58px; height: 58px; min-width: 58px; font-size: 0.85rem; margin: -29px 0 0 -29px; }
+  .float-stick { width: 104px; height: 104px; }
+  .heal-pill { width: 46px; height: 46px; }
   .mbtn.mil { width: 46px; height: 46px; min-width: 46px; }
+  .mbtn.drop-btn { width: 76px; height: 76px; min-width: 76px; font-size: 1.1rem; }
 }
 
 /* Only show sticks when JS marked the device as touch-primary */
@@ -964,14 +957,12 @@ body.touch-capable.playing.touch-mode .touch-ui {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .float-zone { width: min(38vw, 190px); height: min(50vh, 190px); }
-  .aim-zone { bottom: max(120px, calc(env(safe-area-inset-bottom) + 110px)); }
-  .float-stick { width: 100px; height: 100px; }
-  .heal-orbit { width: 120px; height: 120px; }
-  .heal-orb { width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 0.52rem; transform: rotate(var(--a)) translate(44px) rotate(calc(-1 * var(--a))); }
-  .mbtn.jump, .orbit-jump { width: 52px; height: 52px; min-width: 52px; margin: -26px 0 0 -26px; }
+  .float-stick { width: 96px; height: 96px; }
+  .heal-pill { width: 42px; height: 42px; font-size: 0.52rem; }
+  .mbtn.mil { width: 44px; height: 44px; min-width: 44px; }
+  .mbtn.drop-btn { width: 70px; height: 70px; min-width: 70px; font-size: 1rem; }
   .militia-actions { gap: 6px; }
-  body.touch-mode .hud-bottom { bottom: max(110px, calc(env(safe-area-inset-bottom) + 100px)); }
+  body.touch-mode .hud-bottom { bottom: max(78px, calc(env(safe-area-inset-bottom) + 68px)); }
   body.touch-mode #minimap { width: 64px; height: 64px; }
   body.touch-mode .kill-feed { display: none; }
 }

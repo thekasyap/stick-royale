@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no" />
     <meta name="theme-color" content="#1a2218" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -88,7 +88,7 @@
           </label>
           <label class="toggle">
             <input type="checkbox" id="set-autoloot" />
-            <span>Auto-loot</span>
+            <span>Auto-loot essentials (always on for phones)</span>
           </label>
           <label class="toggle">
             <input type="checkbox" id="set-lowpower" />
@@ -138,10 +138,11 @@
         <div id="prompt" class="prompt"></div>
         <div id="drop-banner" class="drop-banner hidden">JUMP</div>
         <div id="mobile-tip" class="mobile-tip hidden">
-          Left move · Right pull to aim+shoot · Heals around JUMP
+          Left half MOVE · Right half AIM+SHOOT · Essentials auto-loot
         </div>
 
         <div id="touch-ui" class="touch-ui militia" aria-hidden="true">
+          <!-- Full-half stick zones (PUBG twin-stick) — buttons float above -->
           <div class="float-zone move-zone" id="move-zone">
             <div class="float-stick" id="move-stick">
               <div class="stick-base" id="stick-base">
@@ -154,35 +155,36 @@
               <div class="stick-base" id="aim-base">
                 <div class="stick-knob" id="aim-knob"></div>
               </div>
-              <div class="aim-fire-hint">AIM</div>
             </div>
           </div>
 
+          <!-- Heals — left rail, only stocked items show -->
+          <div class="heal-rail" id="heal-rail" aria-label="Heals">
+            <button type="button" data-key="q" class="heal-pill band hidden" id="orb-band">
+              <span>BAN</span><em id="orb-band-n">0</em>
+            </button>
+            <button type="button" data-key="c" class="heal-pill med hidden" id="orb-med">
+              <span>MED</span><em id="orb-med-n">0</em>
+            </button>
+            <button type="button" data-key="z" class="heal-pill drink hidden" id="orb-drink">
+              <span>DRK</span><em id="orb-drink-n">0</em>
+            </button>
+            <button type="button" data-key="x" class="heal-pill pain hidden" id="orb-pain">
+              <span>PNK</span><em id="orb-pain-n">0</em>
+            </button>
+          </div>
+
+          <!-- Right actions — contextual LOOT / DROP; always RLD WPN BOMB ADS -->
           <div class="militia-actions" id="militia-actions">
-            <div class="militia-row top-row">
-              <button type="button" data-key="f" class="mbtn mil" id="loot-btn">LOOT</button>
+            <button type="button" data-key="f" class="mbtn mil loot-btn hidden" id="loot-btn">LOOT</button>
+            <button type="button" data-key="v" class="mbtn mil ride-btn hidden" id="ride-btn">RIDE</button>
+            <div class="militia-row combat-row">
               <button type="button" data-key="r" class="mbtn mil" id="reload-btn">RLD</button>
               <button type="button" data-action="weapon" class="mbtn mil" id="wpn-btn">WPN</button>
               <button type="button" data-action="grenade" class="mbtn mil bomb" id="grenade-btn">BOMB</button>
               <button type="button" data-ads class="mbtn mil" id="ads-btn">ADS</button>
             </div>
-
-            <!-- Radial heals around JUMP (space freed by removing FIRE) -->
-            <div class="heal-orbit" id="heal-orbit" aria-label="Heals">
-              <button type="button" data-key="q" class="heal-orb band" style="--a:-135deg" id="orb-band">
-                <span>BAN</span><em id="orb-band-n">0</em>
-              </button>
-              <button type="button" data-key="c" class="heal-orb med" style="--a:-45deg" id="orb-med">
-                <span>MED</span><em id="orb-med-n">0</em>
-              </button>
-              <button type="button" data-key="z" class="heal-orb drink" style="--a:45deg" id="orb-drink">
-                <span>DRK</span><em id="orb-drink-n">0</em>
-              </button>
-              <button type="button" data-key="x" class="heal-orb pain" style="--a:135deg" id="orb-pain">
-                <span>PNK</span><em id="orb-pain-n">0</em>
-              </button>
-              <button type="button" data-key=" " class="mbtn mil jump orbit-jump" id="jump-btn">JUMP</button>
-            </div>
+            <button type="button" data-key=" " class="mbtn drop-btn hidden" id="jump-btn">DROP</button>
           </div>
         </div>
       </div>
