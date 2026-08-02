@@ -1,9 +1,7 @@
 /**
- * Desktop: keyboard + mouse (always available when not actively touch-aiming).
- * Mobile: Mini Militia–style floating sticks + FIRE / JUMP / actions.
- *
- * Critical: touch layout must NOT permanently disable mouse. Laptops with
- * touchscreens and accidental zone clicks used to soft-lock desktop aim/fire.
+ * Desktop: keyboard + mouse.
+ * Mobile (Mini Militia): left move stick · right aim stick auto-fires when pulled.
+ * No separate FIRE button — frees space for radial heals.
  */
 export class Input {
   keys = new Set<string>();
@@ -13,7 +11,7 @@ export class Input {
   mouseRight = false;
   wheelDelta = 0;
   autoLoot = false;
-  /** Optional: shoot while holding aim stick (off by default — aim stays precise) */
+  /** On touch layout this is always true (aim stick shoots). */
   fireOnAim = false;
   sensitivity = 1;
   private justPressed = new Set<string>();
@@ -34,7 +32,6 @@ export class Input {
   private stickPointerId: number | null = null;
   private aimOrigin: { x: number; y: number } | null = null;
   private aimPointerId: number | null = null;
-  /** Show/use on-screen controls — does NOT block mouse by itself */
   private touchLayout = false;
   private viewW = 1280;
   private viewH = 720;
@@ -72,14 +69,12 @@ export class Input {
     });
 
     canvas.addEventListener("mousemove", (e) => {
-      // On phones, aim stick owns aim; ignore ghost mouse after touches
       if (this.touchLayout || this.aimPointerId !== null) return;
       const rect = canvas.getBoundingClientRect();
       this.mouseX = e.clientX - rect.left;
       this.mouseY = e.clientY - rect.top;
     });
     canvas.addEventListener("mousedown", (e) => {
-      // Touch layout uses FIRE / Fire+ only — blocks iOS ghost LMB
       if (this.touchLayout) return;
       if (e.button === 0) {
         this.mouseBtnHeld = true;
@@ -104,18 +99,16 @@ export class Input {
     if (this.aimPointerId !== null) this.applyAimToMouse();
   }
 
-  /**
-   * Enable on-screen stick layout. Safe to call repeatedly — does not reset
-   * aim or kill desktop mouse.
-   */
-  enableTouchMode(autoLoot = true, fireOnAim = false): void {
+  enableTouchMode(autoLoot = true, _fireOnAim = true): void {
     this.touchLayout = true;
     this.autoLoot = autoLoot;
-    this.fireOnAim = fireOnAim;
+    // Mini Militia: pulling aim stick always shoots
+    this.fireOnAim = true;
   }
 
   disableTouchMode(): void {
     this.touchLayout = false;
+    this.fireOnAim = false;
     this.resetPointers();
   }
 
@@ -142,10 +135,6 @@ export class Input {
     this.keys.clear();
   }
 
-  /**
-   * Floating stick zones — stick appears under the thumb.
-   * Mouse pointers are ignored so desktop clicks never latch touch mode.
-   */
   bindFloatingStick(
     zoneEl: HTMLElement,
     stickEl: HTMLElement,
@@ -154,7 +143,6 @@ export class Input {
     const radius = 52;
 
     zoneEl.addEventListener("pointerdown", (e) => {
-      // Desktop / trackpad must never be captured by stick zones
       if (e.pointerType === "mouse") return;
       if (e.button !== 0 && e.pointerType !== "touch") return;
       if (kind === "move" && this.stickPointerId !== null) return;
@@ -265,19 +253,18 @@ export class Input {
     const dx = (x - cx) * this.sensitivity;
     const dy = (y - cy) * this.sensitivity;
     const len = Math.hypot(dx, dy) || 1;
-    const mag = Math.min(1, Math.max(0.15, len / max));
+    const mag = Math.min(1, Math.max(0.12, len / max));
     this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
     this.applyAimToMouse();
-    // Fire+ only when enabled and stick pushed past ~55% (less accidental spray)
-    this.aimFiring = this.fireOnAim && mag >= 0.55;
+    // Pull aim stick → shoot (Mini Militia). Light touch (<30%) aims only.
+    this.aimFiring = this.fireOnAim && mag >= 0.3;
     this.syncMouseDown();
   }
 
   private syncMouseDown(): void {
     const touchFire = this.fireBtnHeld || this.aimFiring;
     this.touchFire = touchFire;
-    this.fireBtnActive = this.fireBtnHeld;
-    // Touch fire OR real mouse button — never let touch "off" wipe a held LMB on desktop
+    this.fireBtnActive = this.fireBtnHeld || this.aimFiring;
     this.mouseDown = touchFire || this.mouseBtnHeld;
   }
 
@@ -286,13 +273,11 @@ export class Input {
     this.syncMouseDown();
   }
 
-  /** Cycle primary ↔ sidearm ↔ melee */
   cycleWeapon(): void {
     this.weaponSlot = (this.weaponSlot + 1) % 3;
     this.injectPress(String(this.weaponSlot + 1));
   }
 
-  /** Arm throwable + fire while held; restore gun slot on release */
   startGrenade(): void {
     this.grenadeReturnSlot = this.weaponSlot;
     this.grenadeActive = true;
@@ -348,7 +333,6 @@ export class Input {
     if (this.down("a") || this.down("arrowleft")) x -= 1;
     if (this.down("d") || this.down("arrowright")) x += 1;
 
-    // Touch stick wins only while actively pushed (won't zero out WASD when idle)
     if (this.stickPointerId !== null &&
         (Math.abs(this.touchMove.x) > 0.05 || Math.abs(this.touchMove.y) > 0.05)) {
       return { x: this.touchMove.x, y: this.touchMove.y };

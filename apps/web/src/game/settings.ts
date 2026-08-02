@@ -2,7 +2,7 @@ export type Settings = {
   audio: boolean;
   haptics: boolean;
   autoLoot: boolean;
-  /** Mini Militia Fire+: shooting while holding aim stick (off = aim only) */
+  /** Legacy — touch always aims-to-fire; kept for save compat */
   fireOnAim: boolean;
   sensitivity: number;
   lowPower: boolean;
@@ -15,7 +15,7 @@ const DEFAULTS: Settings = {
   audio: true,
   haptics: true,
   autoLoot: true,
-  fireOnAim: false,
+  fireOnAim: true,
   sensitivity: 1,
   lowPower: false,
 };
@@ -31,13 +31,11 @@ export function loadSettings(): Settings {
     }
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    // v3 defaults Fire+ off even if an older save had it on accidentally
-    const fromV3 = !!localStorage.getItem(KEY);
     return {
       audio: parsed.audio ?? DEFAULTS.audio,
       haptics: parsed.haptics ?? DEFAULTS.haptics,
       autoLoot: parsed.autoLoot ?? DEFAULTS.autoLoot,
-      fireOnAim: fromV3 ? (parsed.fireOnAim ?? DEFAULTS.fireOnAim) : DEFAULTS.fireOnAim,
+      fireOnAim: true,
       sensitivity: clampSens(parsed.sensitivity ?? DEFAULTS.sensitivity),
       lowPower: parsed.lowPower ?? DEFAULTS.lowPower,
     };
@@ -48,7 +46,7 @@ export function loadSettings(): Settings {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(KEY, JSON.stringify({ ...s, fireOnAim: true }));
   } catch {
     /* private mode */
   }

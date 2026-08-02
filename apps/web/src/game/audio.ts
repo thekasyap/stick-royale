@@ -3,6 +3,9 @@
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private enabled = true;
+  private stepAcc = 0;
+  private moving = false;
+  private ads = false;
 
   private ensure(): AudioContext | null {
     if (!this.enabled) return null;
@@ -121,5 +124,46 @@ export class GameAudio {
   damaged(): void {
     this.noise(0.08, 0.05);
     this.tone(140, 0.1, "sawtooth", 0.04);
+  }
+
+  /** Soft walking loop — call each frame with dt while alive */
+  setMoving(moving: boolean, ads = false, dt = 0): void {
+    this.moving = moving;
+    this.ads = ads;
+    if (!moving) {
+      this.stepAcc = 0;
+      return;
+    }
+    const interval = ads ? 0.42 : 0.3;
+    this.stepAcc += dt;
+    while (this.stepAcc >= interval) {
+      this.stepAcc -= interval;
+      this.footstep();
+    }
+  }
+
+  private footstep(): void {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    // Soft filtered thud — gravel/boot feel, stays under gunfire
+    const dur = 0.05;
+    const bufferSize = Math.floor(ctx.sampleRate * dur);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0)!;
+    for (let i = 0; i < bufferSize; i++) {
+      const env = 1 - i / bufferSize;
+      data[i] = (Math.random() * 2 - 1) * env * env;
+    }
+    const src = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+    src.buffer = buffer;
+    filter.type = "lowpass";
+    filter.frequency.value = 420 + Math.random() * 180;
+    g.gain.value = this.ads ? 0.018 : 0.028;
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(ctx.destination);
+    src.start();
   }
 }

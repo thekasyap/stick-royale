@@ -10,7 +10,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v4";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v5";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -55,7 +55,6 @@ class GameApp {
     kills: 0, nearbyShots: 0,
   };
   private damageFlash = 0;
-  private fireBtn = $("fire-btn");
   private aimStickEl = $("aim-stick");
   private moveStickEl = $("move-stick");
 
@@ -150,8 +149,7 @@ class GameApp {
     this.audio.setEnabled(this.settings.audio);
     this.input.setSensitivity(this.settings.sensitivity);
     this.input.autoLoot = this.settings.autoLoot;
-    this.input.fireOnAim = this.settings.fireOnAim;
-    // Do NOT re-call enableTouchMode here — it used to reset aim mid-match
+    // Touch layout always uses aim-to-fire; desktop ignores fireOnAim
   }
 
   private vibrate(ms: number): void {
@@ -167,10 +165,10 @@ class GameApp {
     if (prefersTouchControls()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
-      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
+      this.input.enableTouchMode(this.settings.autoLoot, true);
       const hint = $("controls-hint");
       hint.textContent =
-        "Touch: left MOVE · right AIM · FIRE · JUMP · LOOT · WPN · BOMB · Settings → Fire+";
+        "Touch: left MOVE · right AIM+SHOOT · JUMP · BAN/MED/DRK/PNK heals · LOOT/WPN/BOMB";
     }
   }
 
@@ -180,7 +178,6 @@ class GameApp {
       ($("set-audio") as HTMLInputElement).checked = this.settings.audio;
       ($("set-haptics") as HTMLInputElement).checked = this.settings.haptics;
       ($("set-autoloot") as HTMLInputElement).checked = this.settings.autoLoot;
-      ($("set-fireonaaim") as HTMLInputElement).checked = this.settings.fireOnAim;
       ($("set-lowpower") as HTMLInputElement).checked = this.settings.lowPower;
       const sens = $("set-sensitivity") as HTMLInputElement;
       sens.value = String(Math.round(this.settings.sensitivity * 100));
@@ -192,7 +189,7 @@ class GameApp {
         audio: ($("set-audio") as HTMLInputElement).checked,
         haptics: ($("set-haptics") as HTMLInputElement).checked,
         autoLoot: ($("set-autoloot") as HTMLInputElement).checked,
-        fireOnAim: ($("set-fireonaaim") as HTMLInputElement).checked,
+        fireOnAim: true,
         lowPower: ($("set-lowpower") as HTMLInputElement).checked,
         sensitivity: Number(($("set-sensitivity") as HTMLInputElement).value) / 100,
       };
@@ -258,16 +255,6 @@ class GameApp {
   private bindTouchControls(): void {
     this.input.bindFloatingStick($("move-zone"), this.moveStickEl, "move");
     this.input.bindFloatingStick($("aim-zone"), this.aimStickEl, "aim");
-
-    this.bindBtn(this.fireBtn, () => {
-      this.audio.unlock();
-      this.input.setFireButton(true);
-      this.fireBtn.classList.add("active");
-      this.vibrate(8);
-    }, () => {
-      this.input.setFireButton(false);
-      this.fireBtn.classList.remove("active");
-    });
 
     const root = $("touch-ui");
     root.querySelectorAll("[data-key]").forEach((btn) => {
@@ -374,7 +361,7 @@ class GameApp {
     document.body.classList.remove("lobby-open");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
-      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
+      this.input.enableTouchMode(this.settings.autoLoot, true);
       this.maybeShowMobileTip();
     }
     void this.enterImmersive();
@@ -454,9 +441,6 @@ class GameApp {
 
   private syncTouchOverlay(): void {
     if (!this.touchMode) return;
-    // Floating sticks sync themselves; just mirror fire feedback
-    const firing = this.input.fireBtnActive || this.input.aimFiring;
-    this.fireBtn.classList.toggle("active", firing);
     this.aimStickEl.classList.toggle("firing", this.input.aimFiring);
   }
 
@@ -483,6 +467,7 @@ class GameApp {
     if (!this.running || !this.host) return;
 
     if (this.paused || document.hidden) {
+      this.audio.setMoving(false);
       this.last = now;
       this.raf = requestAnimationFrame(this.loop);
       return;
@@ -499,6 +484,7 @@ class GameApp {
         compactHud: this.touchMode,
       });
       this.syncHud(this.bundle);
+      this.tickFootsteps(dt);
       this.drawDamageVignette(viewW, viewH, dt);
       if (
         this.mobileTipShown &&
@@ -532,6 +518,17 @@ class GameApp {
     ctx.restore();
   }
 
+  private tickFootsteps(dt: number): void {
+    const p = this.bundle?.player;
+    if (!p || p.state !== "alive" || p.healTimer > 0) {
+      this.audio.setMoving(false);
+      return;
+    }
+    const m = this.input.moveVector();
+    const moving = Math.hypot(m.x, m.y) > 0.12;
+    this.audio.setMoving(moving, this.input.mouseRight, dt);
+  }
+
   private syncHud(bundle: RenderBundle): void {
     $("alive-count").textContent = String(
       bundle.fighters.filter((f) => f.state !== "dead").length,
@@ -558,6 +555,19 @@ class GameApp {
     setHeal("heal-med", "medkit", "C Med");
     setHeal("heal-drink", "energy_drink", "Z Drink");
     setHeal("heal-pain", "painkiller", "X Pain");
+
+    const setOrb = (id: string, key: string) => {
+      const n = (p.heals as Record<string, number | undefined>)[key] ?? 0;
+      const el = document.getElementById(id);
+      if (el) {
+        el.textContent = String(n);
+        el.parentElement?.classList.toggle("empty", n <= 0);
+      }
+    };
+    setOrb("orb-band-n", "bandage");
+    setOrb("orb-med-n", "medkit");
+    setOrb("orb-drink-n", "energy_drink");
+    setOrb("orb-pain-n", "painkiller");
 
     let wName = "—";
     let ammo = "";

@@ -616,7 +616,11 @@ body.lobby-open {
 }
 
 .aim-zone {
-  right: max(110px, calc(env(safe-area-inset-right) + 100px));
+  right: max(8px, env(safe-area-inset-right));
+  /* leave heal-orbit / JUMP clear on the far-right bottom */
+  bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
+  width: min(40vw, 210px);
+  height: min(42vh, 220px);
 }
 
 .float-stick {
@@ -626,6 +630,28 @@ body.lobby-open {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.08s ease;
+}
+
+.aim-fire-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-brand);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: rgba(240, 232, 216, 0.35);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.float-stick.shown .aim-fire-hint {
+  opacity: 0;
+}
+
+.float-stick.firing .aim-fire-hint {
+  opacity: 1;
+  color: rgba(230, 120, 70, 0.85);
 }
 
 .float-stick.shown {
@@ -694,29 +720,71 @@ body.lobby-open {
   pointer-events: auto;
 }
 
-.fire-btn,
-.mil-fire {
-  width: 96px;
-  height: 96px;
+/* Radial heal cluster — BAN / MED / DRK / PNK around JUMP */
+.heal-orbit {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  margin-top: 4px;
+  pointer-events: none;
+}
+
+.heal-orb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
   border-radius: 50%;
-  border: 3px solid rgba(196, 92, 42, 0.9);
-  background: radial-gradient(circle at 35% 30%, rgba(230, 120, 70, 0.9), rgba(130, 36, 22, 0.82));
-  color: #f0e8d8;
-  font-family: var(--font-brand);
-  font-size: 1.3rem;
-  letter-spacing: 0.1em;
+  border: 1px solid rgba(61, 158, 90, 0.55);
+  background: rgba(16, 36, 22, 0.72);
+  color: #e8f0e4;
+  font-family: var(--font-ui);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
   pointer-events: auto;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  transform: rotate(var(--a)) translate(56px) rotate(calc(-1 * var(--a)));
+  backdrop-filter: blur(2px);
 }
 
-.fire-btn:active,
-.fire-btn.active,
-.mil-fire.active {
-  transform: scale(0.94);
-  filter: brightness(1.18);
+.heal-orb em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: #d4a04a;
+}
+
+.heal-orb.empty {
+  opacity: 0.35;
+}
+
+.heal-orb.band { border-color: rgba(90, 180, 110, 0.65); }
+.heal-orb.med { border-color: rgba(220, 90, 80, 0.7); background: rgba(50, 20, 18, 0.7); }
+.heal-orb.drink { border-color: rgba(80, 160, 220, 0.7); background: rgba(18, 36, 56, 0.72); }
+.heal-orb.pain { border-color: rgba(200, 140, 60, 0.7); background: rgba(48, 36, 14, 0.72); }
+
+.heal-orb:active,
+.heal-orb.active {
+  filter: brightness(1.2);
+  transform: rotate(var(--a)) translate(56px) rotate(calc(-1 * var(--a))) scale(0.94);
+}
+
+.orbit-jump {
+  position: absolute !important;
+  left: 50%;
+  top: 50%;
+  margin: -34px 0 0 -34px;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .mbtn {
@@ -874,8 +942,9 @@ body.playing #app {
   .lobby-content { padding: 1.25rem 1rem max(2rem, env(safe-area-inset-bottom)); }
   .cta { width: 100%; }
   .float-stick { width: 108px; height: 108px; }
-  .fire-btn, .mil-fire { width: 84px; height: 84px; font-size: 1.1rem; }
-  .mbtn.jump { width: 58px; height: 58px; min-width: 58px; font-size: 0.85rem; }
+  .heal-orbit { width: 132px; height: 132px; }
+  .heal-orb { width: 44px; height: 44px; margin: -22px 0 0 -22px; transform: rotate(var(--a)) translate(50px) rotate(calc(-1 * var(--a))); }
+  .mbtn.jump, .orbit-jump { width: 58px; height: 58px; min-width: 58px; font-size: 0.85rem; margin: -29px 0 0 -29px; }
   .mbtn.mil { width: 46px; height: 46px; min-width: 46px; }
 }
 
@@ -895,10 +964,12 @@ body.touch-capable.playing.touch-mode .touch-ui {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .float-zone { width: min(38vw, 190px); height: min(55vh, 200px); }
+  .float-zone { width: min(38vw, 190px); height: min(50vh, 190px); }
+  .aim-zone { bottom: max(120px, calc(env(safe-area-inset-bottom) + 110px)); }
   .float-stick { width: 100px; height: 100px; }
-  .fire-btn, .mil-fire { width: 76px; height: 76px; font-size: 1rem; }
-  .mbtn.jump { width: 54px; height: 54px; min-width: 54px; }
+  .heal-orbit { width: 120px; height: 120px; }
+  .heal-orb { width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 0.52rem; transform: rotate(var(--a)) translate(44px) rotate(calc(-1 * var(--a))); }
+  .mbtn.jump, .orbit-jump { width: 52px; height: 52px; min-width: 52px; margin: -26px 0 0 -26px; }
   .militia-actions { gap: 6px; }
   body.touch-mode .hud-bottom { bottom: max(110px, calc(env(safe-area-inset-bottom) + 100px)); }
   body.touch-mode #minimap { width: 64px; height: 64px; }

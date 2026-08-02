@@ -420,28 +420,145 @@ export class Renderer {
     const { ctx } = this;
     for (const pile of map.loot) {
       if (pile.items.length === 0) continue;
-      if (!this.inView(pile.x, pile.y, 24)) continue;
+      if (!this.inView(pile.x, pile.y, 28)) continue;
+
+      // Ground shadow
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.beginPath();
+      ctx.ellipse(pile.x, pile.y + 3, 7, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
       if (pile.fromCrate) {
-        // Death crate — readable square + skull mark (Surviv.io-style)
-        ctx.fillStyle = "#3a3228";
-        ctx.fillRect(pile.x - 8, pile.y - 8, 16, 16);
+        // Wooden death crate
+        ctx.fillStyle = "#5a4028";
+        ctx.fillRect(pile.x - 9, pile.y - 8, 18, 16);
+        ctx.fillStyle = "#3a2818";
+        ctx.fillRect(pile.x - 9, pile.y - 2, 18, 3);
         ctx.strokeStyle = "#d4a04a";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(pile.x - 8, pile.y - 8, 16, 16);
-        ctx.fillStyle = "#d4a04a";
-        ctx.font = "700 10px 'IBM Plex Sans'";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(pile.x - 9, pile.y - 8, 18, 16);
+        ctx.fillStyle = "#e8c878";
+        ctx.font = "700 9px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("☠", pile.x, pile.y + 3);
+        ctx.fillText("×", pile.x, pile.y + 3);
         continue;
       }
-      ctx.fillStyle = "#f0e8d8";
+
+      const item = pile.items[0]!;
+      this.drawLootIcon(pile.x, pile.y, item);
+      if (pile.items.length > 1) {
+        ctx.fillStyle = "#f0e8d8";
+        ctx.font = "700 8px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`+${pile.items.length - 1}`, pile.x + 6, pile.y - 6);
+      }
+    }
+  }
+
+  private drawLootIcon(x: number, y: number, item: IslandMap["loot"][number]["items"][number]): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.translate(x, y);
+
+    if (item.type === "weapon") {
+      const cat = WEAPONS[item.weaponId]?.category ?? "ar";
+      const col =
+        cat === "sr" || cat === "dmr" ? "#9b6bdb" :
+        cat === "sg" ? "#d4843a" :
+        cat === "smg" ? "#5aa8d4" :
+        cat === "pistol" ? "#c4b59a" :
+        cat === "melee" ? "#a8a090" : "#6bb06a";
+      // Soft glow
+      ctx.fillStyle = col + "55";
       ctx.beginPath();
-      ctx.arc(pile.x, pile.y, 5, 0, Math.PI * 2);
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      // Gun silhouette — body + barrel
+      ctx.strokeStyle = col;
+      ctx.fillStyle = col;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-7, 1);
+      ctx.lineTo(8, 1);
+      ctx.stroke();
+      ctx.fillRect(-6, -2, 7, 5);
+      ctx.fillRect(5, -1, 5, 2);
+      ctx.strokeStyle = "#1a1814";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-6, -2, 7, 5);
+    } else if (item.type === "ammo") {
+      ctx.fillStyle = "#d4a04a";
+      ctx.fillRect(-4, -5, 3, 10);
+      ctx.fillRect(-0.5, -5, 3, 10);
+      ctx.fillRect(3, -5, 3, 10);
+      ctx.fillStyle = "#8a6a30";
+      ctx.fillRect(-4, -5, 3, 2);
+      ctx.fillRect(-0.5, -5, 3, 2);
+      ctx.fillRect(3, -5, 3, 2);
+    } else if (item.type === "heal") {
+      const isMed = item.healId === "medkit";
+      const isBoost = item.healId === "energy_drink" || item.healId === "painkiller";
+      if (isBoost) {
+        ctx.fillStyle = item.healId === "painkiller" ? "#c49040" : "#4a90c4";
+        ctx.fillRect(-4, -6, 8, 12);
+        ctx.strokeStyle = "rgba(0,0,0,0.4)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-4, -6, 8, 12);
+      } else {
+        ctx.fillStyle = isMed ? "#e8e8e8" : "#f0f4f0";
+        ctx.fillRect(-6, -5, 12, 10);
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-6, -5, 12, 10);
+        ctx.fillStyle = isMed ? "#c43a2a" : "#3d9e5a";
+        ctx.fillRect(-1.5, -4, 3, 8);
+        ctx.fillRect(-4, -1.5, 8, 3);
+      }
+    } else if (item.type === "armor") {
+      ctx.fillStyle = "#6a7a8a";
+      ctx.beginPath();
+      ctx.moveTo(0, -7);
+      ctx.lineTo(7, -3);
+      ctx.lineTo(5, 6);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(-5, 6);
+      ctx.lineTo(-7, -3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#d4a04a";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    } else if (item.type === "attachment") {
+      ctx.fillStyle = "#8a8070";
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#f0e8d8";
       ctx.lineWidth = 1;
       ctx.stroke();
+    } else if (item.type === "throwable") {
+      if (item.weaponId === "smoke") {
+        ctx.fillStyle = "#888880";
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 5, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = "#4a5a34";
+        ctx.beginPath();
+        ctx.ellipse(0, 1, 4, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#c4a060";
+        ctx.fillRect(-1.5, -6, 3, 4);
+      }
+    } else {
+      ctx.fillStyle = "#f0e8d8";
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
     }
+
+    ctx.restore();
   }
 
   private drawFighters(world: RenderBundle): void {
