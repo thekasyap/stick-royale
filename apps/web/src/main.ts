@@ -103,7 +103,9 @@ class GameApp {
       "touchmove",
       (e) => {
         if (!this.running) return;
+        // Pinch / multi-touch zoom
         if (e.touches.length > 1) e.preventDefault();
+        // iOS Safari exposes scale on some TouchEvents
         const te = e as TouchEvent & { scale?: number };
         if (typeof te.scale === "number" && te.scale !== 1) e.preventDefault();
       },
@@ -117,6 +119,7 @@ class GameApp {
       { passive: false },
     );
 
+    // Double-tap zoom — only block on game surface, never on buttons/inputs
     let lastTap = 0;
     document.addEventListener(
       "touchend",
@@ -147,6 +150,7 @@ class GameApp {
     app.style.transformOrigin = "";
     app.style.width = "";
     app.style.height = "";
+    // Re-assert non-scalable viewport without fighting layout
     const meta = document.querySelector('meta[name="viewport"]');
     meta?.setAttribute(
       "content",
@@ -624,6 +628,7 @@ class GameApp {
       }
     }
     this.syncTouchOverlay();
+    // Sync WPN cycle to real sim slot
     if (this.bundle) this.input.syncWeaponSlot(this.bundle.player.activeSlot);
     this.input.endFrame();
 
