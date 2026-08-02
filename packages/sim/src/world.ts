@@ -113,6 +113,13 @@ export class World {
   partySize: PartySize;
   camera = { x: 0, y: 0, zoom: 1 };
   prompt = "";
+  /** Contextual touch/HUD action (PUBG-style — only show when useful) */
+  interact: null | {
+    kind: "drop" | "cut" | "loot" | "care" | "vehicle" | "revive";
+    label: string;
+    /** True when player must tap LOOT (weapon swap / leftover) */
+    manual: boolean;
+  } = null;
   /** Client diffs these counters each frame for SFX */
   sfx = {
     shots: 0,
@@ -437,10 +444,13 @@ export class World {
   private updatePlayer(dt: number, input: GameInput, viewW: number, viewH: number): void {
     const p = this.player;
     this.prompt = "";
+    this.interact = null;
 
     if (p.state === "plane") {
       p.x = this.plane.x;
       p.y = this.plane.y;
+      this.interact = { kind: "drop", label: "DROP", manual: true };
+      this.prompt = "DROP when ready";
       // Accept pressed OR held jump — mobile taps must not be lost to worker queue timing
       if (
         input.pressed(" ") || input.down(" ") ||
@@ -472,12 +482,19 @@ export class World {
       p.y += Math.sin(angleTo(p, { x: worldMx, y: worldMy })) * 55 * dt;
       p.aim = angleTo(p, { x: worldMx, y: worldMy });
       p.chuteAlt = Math.max(0, (p.chuteAlt ?? 1) - dt * 0.22);
-      this.prompt = `Altitude ${Math.ceil((p.chuteAlt ?? 0) * 100)}% · JUMP cut chute`;
-      // Edge only — holding Jump from the plane drop must not instantly cut chute
-      if (input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0) {
+      const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
+      this.prompt = `Altitude ${alt}% · CUT chute`;
+      this.interact = { kind: "cut", label: "CUT", manual: true };
+      // Don't instant-cut from held DROP: only after chute has opened a bit, or edge tap
+      const canHoldCut = (p.chuteAlt ?? 1) < 0.9;
+      if (
+        input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0 ||
+        (canHoldCut && input.down(" "))
+      ) {
         p.state = "alive";
         p.invuln = 0.5;
         p.chuteAlt = 0;
+        this.interact = null;
       }
       return;
     }
@@ -551,13 +568,16 @@ export class World {
     const revived = tickRevive(p, this.fighters, dt, input.down("h"));
     if (revived) { /* loot sfx */ }
 
-    const near = this.nearestLoot(p.x, p.y, 48);
-    const nearCare = this.carePackages.find((c) => c.landed && dist(p, c) < 52);
+    const near = this.nearestLoot(p.x, p.y, 52);
+    const nearCare = this.carePackages.find((c) => c.landed && dist(p, c) < 56);
     const wantLoot = input.pressed("f") || input.pressed("e");
+    // Essentials always auto on touch / when setting on — PUBG-style
     const auto = !!input.autoLoot;
 
     if (nearCare && !downedMate) {
-      this.prompt = auto ? "AUTO · Care Package" : "F — Care Package";
+      const leftover = nearCare.items.some((item) => !this.shouldAutoTake(p, item));
+      this.prompt = leftover ? "LOOT · Care Package (weapons)" : "AUTO · Care Package";
+      this.interact = { kind: "care", label: "LOOT", manual: leftover || !auto };
       if (wantLoot || auto) {
         const left: typeof nearCare.items = [];
         for (const item of nearCare.items) {
@@ -573,6 +593,11 @@ export class World {
         }
         nearCare.items = left;
         this.carePackages = this.carePackages.filter((c) => c.items.length > 0 || !c.landed);
+        if (nearCare.items.length === 0) this.interact = null;
+        else {
+          const still = nearCare.items.some((item) => !this.shouldAutoTake(p, item));
+          this.interact = { kind: "care", label: "LOOT", manual: still };
+        }
       }
     } else if (near && !downedMate) {
       const top = near.items[0]!;
@@ -588,9 +613,11 @@ export class World {
       }
       const who = near.fromCrate && near.ownerName ? `${near.ownerName}'s crate · ` : "";
       const labels = near.items.map(lootLabel).slice(0, 3).join(", ");
-      this.prompt = auto
-        ? `AUTO · ${who}${labels}${compare}`
-        : `F — ${who}${labels}${compare}`;
+      const leftover = near.items.some((item) => !this.shouldAutoTake(p, item));
+      this.prompt = leftover
+        ? `LOOT · ${who}${labels}${compare}`
+        : `AUTO · ${who}${labels}${compare}`;
+      this.interact = { kind: "loot", label: "LOOT", manual: leftover || !auto };
       if (wantLoot) {
         const before = near.items.length;
         this.pickupLoot(p, near);
@@ -600,10 +627,21 @@ export class World {
         this.pickupLootAuto(p, near);
         if (near.items.length < before) this.sfx.loots += 1;
       }
+      if (near.items.length === 0) this.interact = null;
+      else {
+        const still = near.items.some((item) => !this.shouldAutoTake(p, item));
+        this.interact = { kind: "loot", label: "LOOT", manual: still };
+      }
     }
 
     const nearVeh = this.vehicles.find((v) => !v.driverId && dist(p, v) < 44);
-    if (nearVeh && !near && !downedMate) this.prompt = "V — enter vehicle";
+    if (nearVeh && !near && !nearCare && !downedMate) {
+      this.prompt = "V — enter vehicle";
+      this.interact = { kind: "vehicle", label: "RIDE", manual: true };
+    }
+    if (downedMate) {
+      this.interact = { kind: "revive", label: "REVIVE", manual: true };
+    }
 
     if (input.mouseDown) {
       const gun = activeWeapon(p);
@@ -657,12 +695,16 @@ export class World {
     pile.items = remaining;
   }
 
-  /** PUBG-style: auto grab ammo/heals/armor; weapons only into empty slots (no A↔B thrash) */
+  /**
+   * PUBG essentials: ammo, heals, armor upgrades, attachments, throwables.
+   * Weapons only into empty / starter slots (manual LOOT for swaps).
+   */
   private shouldAutoTake(f: Fighter, item: LootKind): boolean {
-    if (item.type === "ammo" || item.type === "heal" || item.type === "attachment" || item.type === "throwable") {
+    if (item.type === "ammo" || item.type === "throwable" || item.type === "attachment") {
       return true;
     }
-    if (item.type === "armor") return true;
+    if (item.type === "heal") return true;
+    if (item.type === "armor") return true; // tryPickup rejects non-upgrades
     if (item.type === "weapon") {
       const def = WEAPONS[item.weaponId];
       if (!def) return false;
@@ -915,6 +957,7 @@ export class World {
       result: this.result,
       camera: this.camera,
       prompt: this.prompt,
+      interact: this.interact,
       sfx: { ...this.sfx },
       damageDir: this.damageDir,
       phaseLabel: zonePhaseLabel(this.zone),

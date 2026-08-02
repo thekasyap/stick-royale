@@ -10,7 +10,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v5";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v6";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -88,7 +88,15 @@ class GameApp {
     document.addEventListener(
       "touchmove",
       (e) => {
-        if (this.running && e.touches.length > 1) e.preventDefault();
+        if (!this.running) return;
+        if (e.touches.length > 1) e.preventDefault();
+      },
+      { passive: false },
+    );
+    document.addEventListener(
+      "wheel",
+      (e) => {
+        if (this.running && (e.ctrlKey || e.metaKey)) e.preventDefault();
       },
       { passive: false },
     );
@@ -99,15 +107,49 @@ class GameApp {
       (e) => {
         if (!this.running) return;
         const now = performance.now();
-        if (now - lastTap < 320) e.preventDefault();
+        if (now - lastTap < 350) e.preventDefault();
         lastTap = now;
+        this.recoverViewportZoom();
       },
       { passive: false },
     );
+    window.visualViewport?.addEventListener("resize", () => {
+      if (this.running) this.recoverViewportZoom();
+    });
+  }
+
+  /** If the browser still zooms, compensate so the game stays playable */
+  private recoverViewportZoom(): void {
+    if (!this.running) return;
+    const vv = window.visualViewport;
+    const scale = vv?.scale ?? 1;
+    const app = $("app");
+    if (Math.abs(scale - 1) > 0.02) {
+      // Counter-scale the app so gameplay fills the visual viewport
+      app.style.transform = `scale(${1 / scale})`;
+      app.style.transformOrigin = "0 0";
+      app.style.width = `${scale * 100}vw`;
+      app.style.height = `${scale * 100}vh`;
+      // Nudge viewport meta (helps some Android WebViews)
+      const meta = document.querySelector('meta[name="viewport"]');
+      if (meta) {
+        meta.setAttribute(
+          "content",
+          "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no",
+        );
+      }
+    } else {
+      app.style.transform = "";
+      app.style.transformOrigin = "";
+      app.style.width = "";
+      app.style.height = "";
+    }
+    window.scrollTo(0, 0);
   }
 
   private fixViewportScroll(): void {
     if (!this.running) return;
+    this.recoverViewportZoom();
     window.scrollTo(0, 0);
     if (window.visualViewport && window.visualViewport.offsetTop !== 0) {
       window.scrollTo(0, 0);
@@ -148,8 +190,8 @@ class GameApp {
   private applySettings(): void {
     this.audio.setEnabled(this.settings.audio);
     this.input.setSensitivity(this.settings.sensitivity);
-    this.input.autoLoot = this.settings.autoLoot;
-    // Touch layout always uses aim-to-fire; desktop ignores fireOnAim
+    // Mobile always auto-loots essentials (PUBG); desktop respects setting
+    this.input.autoLoot = this.touchMode ? true : this.settings.autoLoot;
   }
 
   private vibrate(ms: number): void {
@@ -165,10 +207,10 @@ class GameApp {
     if (prefersTouchControls()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
-      this.input.enableTouchMode(this.settings.autoLoot, true);
+      this.input.enableTouchMode(true, true);
       const hint = $("controls-hint");
       hint.textContent =
-        "Touch: left MOVE · right AIM+SHOOT · JUMP · BAN/MED/DRK/PNK heals · LOOT/WPN/BOMB";
+        "Touch: left MOVE · right AIM+SHOOT · essentials auto-loot · DROP/CUT when airborne";
     }
   }
 
@@ -361,7 +403,7 @@ class GameApp {
     document.body.classList.remove("lobby-open");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
-      this.input.enableTouchMode(this.settings.autoLoot, true);
+      this.input.enableTouchMode(true, true);
       this.maybeShowMobileTip();
     }
     void this.enterImmersive();
@@ -442,6 +484,38 @@ class GameApp {
   private syncTouchOverlay(): void {
     if (!this.touchMode) return;
     this.aimStickEl.classList.toggle("firing", this.input.aimFiring);
+
+    const jump = $("jump-btn");
+    const loot = $("loot-btn");
+    const ride = $("ride-btn");
+    const interact = this.bundle?.interact ?? null;
+    const state = this.bundle?.player.state;
+
+    // DROP / CUT only while airborne (PUBG) — hidden on ground
+    const air = state === "plane" || state === "parachute";
+    const grounded = state === "alive";
+    jump.classList.toggle("hidden", !air);
+    if (air) {
+      jump.textContent = state === "plane" ? "DROP" : "CUT";
+    }
+
+    // Combat cluster only on foot
+    const combat = document.querySelector(".combat-row") as HTMLElement | null;
+    combat?.classList.toggle("hidden", !grounded);
+    $("heal-rail").classList.toggle("hidden", !grounded);
+
+    // LOOT only when something needs a tap (weapon swap) — essentials auto-grab
+    const showLoot =
+      grounded &&
+      (interact?.kind === "loot" || interact?.kind === "care") &&
+      !!interact.manual;
+    loot.classList.toggle("hidden", !showLoot);
+    loot.classList.toggle("pulse", showLoot);
+    if (showLoot) loot.textContent = interact?.label ?? "LOOT";
+
+    // Vehicle enter
+    const showRide = grounded && interact?.kind === "vehicle";
+    ride.classList.toggle("hidden", !showRide);
   }
 
   private backToLobby(): void {
@@ -456,6 +530,10 @@ class GameApp {
     void this.exitImmersive();
     document.body.classList.remove("playing", "touch-mode");
     document.body.classList.add("lobby-open");
+    const app = $("app");
+    app.style.transform = "";
+    app.style.width = "";
+    app.style.height = "";
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
@@ -494,6 +572,7 @@ class GameApp {
       }
     }
     this.syncTouchOverlay();
+    this.recoverViewportZoom();
     this.input.endFrame();
 
     if (this.host.matchOver && this.host.result) {
@@ -556,18 +635,17 @@ class GameApp {
     setHeal("heal-drink", "energy_drink", "Z Drink");
     setHeal("heal-pain", "painkiller", "X Pain");
 
-    const setOrb = (id: string, key: string) => {
+    const setOrb = (btnId: string, nId: string, key: string) => {
       const n = (p.heals as Record<string, number | undefined>)[key] ?? 0;
-      const el = document.getElementById(id);
-      if (el) {
-        el.textContent = String(n);
-        el.parentElement?.classList.toggle("empty", n <= 0);
-      }
+      const btn = document.getElementById(btnId);
+      const num = document.getElementById(nId);
+      if (btn) btn.classList.toggle("hidden", n <= 0 || !this.touchMode || p.state !== "alive");
+      if (num) num.textContent = String(n);
     };
-    setOrb("orb-band-n", "bandage");
-    setOrb("orb-med-n", "medkit");
-    setOrb("orb-drink-n", "energy_drink");
-    setOrb("orb-pain-n", "painkiller");
+    setOrb("orb-band", "orb-band-n", "bandage");
+    setOrb("orb-med", "orb-med-n", "medkit");
+    setOrb("orb-drink", "orb-drink-n", "energy_drink");
+    setOrb("orb-pain", "orb-pain-n", "painkiller");
 
     let wName = "—";
     let ammo = "";
@@ -596,12 +674,12 @@ class GameApp {
     const drop = $("drop-banner");
     if (p.state === "plane") {
       drop.classList.remove("hidden");
-      drop.textContent = this.touchMode ? "TAP JUMP TO DROP" : "JUMP · SPACE / F";
+      drop.textContent = this.touchMode ? "TAP DROP" : "JUMP · SPACE / F";
     } else if (p.state === "parachute") {
       drop.classList.remove("hidden");
       const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
       drop.textContent = this.touchMode
-        ? `TAP JUMP TO CUT  ·  ALT ${alt}%`
+        ? `TAP CUT  ·  ALT ${alt}%`
         : `CUT CHUTE · SPACE  ·  ALT ${alt}%`;
     } else {
       drop.classList.add("hidden");
