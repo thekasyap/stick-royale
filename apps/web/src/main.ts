@@ -10,7 +10,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_militia";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -58,11 +58,9 @@ class GameApp {
     kills: 0, nearbyShots: 0,
   };
   private damageFlash = 0;
-  private stickBaseEl = $("stick-base");
-  private stickKnobEl = $("stick-knob");
-  private aimBaseEl = $("aim-base");
-  private aimKnobEl = $("aim-knob");
   private fireBtn = $("fire-btn");
+  private aimStickEl = $("aim-stick");
+  private moveStickEl = $("move-stick");
 
   constructor() {
     ensureGuestId();
@@ -155,7 +153,10 @@ class GameApp {
     this.audio.setEnabled(this.settings.audio);
     this.input.setSensitivity(this.settings.sensitivity);
     this.input.autoLoot = this.settings.autoLoot;
-    if (this.touchMode) this.input.enableTouchMode(this.settings.autoLoot);
+    this.input.fireOnAim = this.settings.fireOnAim;
+    if (this.touchMode) {
+      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
+    }
   }
 
   private vibrate(ms: number): void {
@@ -171,20 +172,21 @@ class GameApp {
     if (isTouchCapable()) {
       document.body.classList.add("touch-capable");
       this.touchMode = true;
-      this.input.enableTouchMode(this.settings.autoLoot);
+      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
       const hint = $("controls-hint");
       hint.textContent =
-        "Left MOVE · Right AIM · FIRE · JUMP · Auto-loot on · Open Settings anytime";
+        "Mini Militia: left MOVE · right AIM (Fire+) · FIRE · JUMP · BOMB · WPN";
     }
   }
 
   private bindSettingsUi(): void {
     const modal = $("settings-modal");
     const syncForm = () => {
-      ( $("set-audio") as HTMLInputElement).checked = this.settings.audio;
-      ( $("set-haptics") as HTMLInputElement).checked = this.settings.haptics;
-      ( $("set-autoloot") as HTMLInputElement).checked = this.settings.autoLoot;
-      ( $("set-lowpower") as HTMLInputElement).checked = this.settings.lowPower;
+      ($("set-audio") as HTMLInputElement).checked = this.settings.audio;
+      ($("set-haptics") as HTMLInputElement).checked = this.settings.haptics;
+      ($("set-autoloot") as HTMLInputElement).checked = this.settings.autoLoot;
+      ($("set-fireonaaim") as HTMLInputElement).checked = this.settings.fireOnAim;
+      ($("set-lowpower") as HTMLInputElement).checked = this.settings.lowPower;
       const sens = $("set-sensitivity") as HTMLInputElement;
       sens.value = String(Math.round(this.settings.sensitivity * 100));
       $("sens-val").textContent = this.settings.sensitivity.toFixed(2);
@@ -195,6 +197,7 @@ class GameApp {
         audio: ($("set-audio") as HTMLInputElement).checked,
         haptics: ($("set-haptics") as HTMLInputElement).checked,
         autoLoot: ($("set-autoloot") as HTMLInputElement).checked,
+        fireOnAim: ($("set-fireonaaim") as HTMLInputElement).checked,
         lowPower: ($("set-lowpower") as HTMLInputElement).checked,
         sensitivity: Number(($("set-sensitivity") as HTMLInputElement).value) / 100,
       };
@@ -258,19 +261,16 @@ class GameApp {
   }
 
   private bindTouchControls(): void {
-    this.input.bindStickPad($("move-pad"));
-    this.input.bindAimPad($("aim-pad"));
+    this.input.bindFloatingStick($("move-zone"), this.moveStickEl, "move");
+    this.input.bindFloatingStick($("aim-zone"), this.aimStickEl, "aim");
 
     this.bindBtn(this.fireBtn, () => {
       this.audio.unlock();
-      this.input.mouseDown = true;
-      this.input.touchFire = true;
-      this.input.fireBtnActive = true;
+      this.input.setFireButton(true);
       this.fireBtn.classList.add("active");
+      this.vibrate(8);
     }, () => {
-      this.input.mouseDown = false;
-      this.input.touchFire = false;
-      this.input.fireBtnActive = false;
+      this.input.setFireButton(false);
       this.fireBtn.classList.remove("active");
     });
 
@@ -281,21 +281,35 @@ class GameApp {
         this.audio.unlock();
         this.input.injectPress(key);
         (btn as HTMLElement).classList.add("active");
+        if (key === " ") this.vibrate(12);
       }, () => {
         this.input.injectRelease(key);
         (btn as HTMLElement).classList.remove("active");
       });
     });
 
-    const ads = root.querySelector("[data-ads]");
-    if (ads) {
-      this.bindBtn(ads, () => {
+    const wpn = root.querySelector("[data-action=\"weapon\"]");
+    if (wpn) {
+      this.bindBtn(wpn, () => {
         this.audio.unlock();
-        this.input.mouseRight = true;
-        ads.classList.add("active");
+        this.input.cycleWeapon();
+        wpn.classList.add("active");
+        this.vibrate(10);
       }, () => {
-        this.input.mouseRight = false;
-        ads.classList.remove("active");
+        wpn.classList.remove("active");
+      });
+    }
+
+    const bomb = root.querySelector("[data-action=\"grenade\"]");
+    if (bomb) {
+      this.bindBtn(bomb, () => {
+        this.audio.unlock();
+        this.input.startGrenade();
+        bomb.classList.add("active");
+        this.vibrate(14);
+      }, () => {
+        this.input.endGrenade();
+        bomb.classList.remove("active");
       });
     }
   }
@@ -353,7 +367,7 @@ class GameApp {
     document.body.classList.remove("lobby-open");
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
-      this.input.enableTouchMode(this.settings.autoLoot);
+      this.input.enableTouchMode(this.settings.autoLoot, this.settings.fireOnAim);
       this.maybeShowMobileTip();
     }
     void this.enterImmersive();
@@ -433,47 +447,10 @@ class GameApp {
 
   private syncTouchOverlay(): void {
     if (!this.touchMode) return;
-    const max = 44;
-    const syncPad = (
-      visible: boolean,
-      baseEl: HTMLElement,
-      knobEl: HTMLElement,
-      base: { x: number; y: number },
-      knob: { x: number; y: number },
-    ) => {
-      if (visible) {
-        baseEl.classList.add("active");
-        const dx = knob.x - base.x;
-        const dy = knob.y - base.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const mag = Math.min(max, len);
-        knobEl.style.transform = `translate(${(dx / len) * mag}px, ${(dy / len) * mag}px)`;
-      } else {
-        baseEl.classList.remove("active");
-        knobEl.style.transform = "translate(0, 0)";
-      }
-    };
-    syncPad(
-      this.input.stickVisible,
-      this.stickBaseEl,
-      this.stickKnobEl,
-      this.input.stickBase,
-      this.input.stickKnob,
-    );
-    syncPad(
-      this.input.aimVisible,
-      this.aimBaseEl,
-      this.aimKnobEl,
-      this.input.aimBase,
-      this.input.aimKnob,
-    );
-    // When aim pad idle, still show last aim direction on knob
-    if (!this.input.aimVisible) {
-      const reach = 36;
-      this.aimKnobEl.style.transform =
-        `translate(${this.input.aimStick.x * reach}px, ${this.input.aimStick.y * reach}px)`;
-    }
-    this.fireBtn.classList.toggle("active", this.input.fireBtnActive);
+    // Floating sticks sync themselves; just mirror fire feedback
+    const firing = this.input.fireBtnActive || this.input.aimFiring;
+    this.fireBtn.classList.toggle("active", firing);
+    this.aimStickEl.classList.toggle("firing", this.input.aimFiring);
   }
 
   private backToLobby(): void {
