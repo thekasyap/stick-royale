@@ -727,7 +727,9 @@ class GameApp {
     this.host?.destroy();
     this.host = null;
     cancelAnimationFrame(this.raf);
+    document.documentElement.classList.remove("playing");
     document.body.classList.remove("playing");
+    this.clearAppZoomHacks();
   }
 }
 
