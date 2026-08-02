@@ -92,7 +92,7 @@
           </label>
           <label class="toggle">
             <input type="checkbox" id="set-fireonaaim" />
-            <span>Fire+ (aim stick also shoots — Mini Militia)</span>
+            <span>Fire+ (aim stick also shoots — optional)</span>
           </label>
           <label class="toggle">
             <input type="checkbox" id="set-lowpower" />
@@ -142,11 +142,10 @@
         <div id="prompt" class="prompt"></div>
         <div id="drop-banner" class="drop-banner hidden">JUMP</div>
         <div id="mobile-tip" class="mobile-tip hidden">
-          Mini Militia style — left move · right aim (drag to shoot) · FIRE / JUMP
+          Left move · Right aim · Hold FIRE to shoot · JUMP to drop
         </div>
 
         <div id="touch-ui" class="touch-ui militia" aria-hidden="true">
-          <!-- Floating stick zones (Mini Militia) -->
           <div class="float-zone move-zone" id="move-zone">
             <div class="float-stick" id="move-stick">
               <div class="stick-base" id="stick-base">
@@ -162,14 +161,15 @@
             </div>
           </div>
 
-          <!-- Action cluster — right side like Mini Militia -->
           <div class="militia-actions" id="militia-actions">
             <div class="militia-row top-row">
+              <button type="button" data-key="f" class="mbtn mil" id="loot-btn">LOOT</button>
               <button type="button" data-key="r" class="mbtn mil" id="reload-btn">RLD</button>
               <button type="button" data-action="weapon" class="mbtn mil" id="wpn-btn">WPN</button>
               <button type="button" data-action="grenade" class="mbtn mil bomb" id="grenade-btn">BOMB</button>
             </div>
             <div class="militia-row mid-row">
+              <button type="button" data-ads class="mbtn mil" id="ads-btn">ADS</button>
               <button type="button" data-key="q" class="mbtn mil heal">+</button>
               <button type="button" data-key=" " class="mbtn mil jump" id="jump-btn">JUMP</button>
             </div>

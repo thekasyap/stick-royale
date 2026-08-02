@@ -1,9 +1,9 @@
 /**
- * Desktop: keyboard + mouse.
- * Mobile (Mini Militia–style):
- *   Left floating stick  → move (appears under thumb)
- *   Right floating stick → aim; optional Fire+ (shoot while aiming)
- *   FIRE / JUMP / GRENADE / WPN / RLD buttons
+ * Desktop: keyboard + mouse (always available when not actively touch-aiming).
+ * Mobile: Mini Militia–style floating sticks + FIRE / JUMP / actions.
+ *
+ * Critical: touch layout must NOT permanently disable mouse. Laptops with
+ * touchscreens and accidental zone clicks used to soft-lock desktop aim/fire.
  */
 export class Input {
   keys = new Set<string>();
@@ -13,15 +13,14 @@ export class Input {
   mouseRight = false;
   wheelDelta = 0;
   autoLoot = false;
-  /** Mini Militia Fire+: shoot when aim stick is pushed */
-  fireOnAim = true;
+  /** Optional: shoot while holding aim stick (off by default — aim stays precise) */
+  fireOnAim = false;
   sensitivity = 1;
   private justPressed = new Set<string>();
   touchMove = { x: 0, y: 0 };
   aimStick = { x: 1, y: 0 };
   touchFire = false;
   fireBtnActive = false;
-  /** Aim-stick is actively held past fire threshold */
   aimFiring = false;
 
   stickVisible = false;
@@ -35,11 +34,15 @@ export class Input {
   private stickPointerId: number | null = null;
   private aimOrigin: { x: number; y: number } | null = null;
   private aimPointerId: number | null = null;
-  private usingTouch = false;
+  /** Show/use on-screen controls — does NOT block mouse by itself */
+  private touchLayout = false;
   private viewW = 1280;
   private viewH = 720;
   private weaponSlot = 0;
   private fireBtnHeld = false;
+  private mouseBtnHeld = false;
+  private grenadeReturnSlot = 0;
+  private grenadeActive = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.mouseX = this.viewW * 0.5 + 180;
@@ -57,8 +60,10 @@ export class Input {
       this.keys.delete(e.key.toLowerCase());
     });
     window.addEventListener("mouseup", (e) => {
-      if (this.usingTouch) return;
-      if (e.button === 0) this.mouseDown = false;
+      if (e.button === 0) {
+        this.mouseBtnHeld = false;
+        this.syncMouseDown();
+      }
       if (e.button === 2) this.mouseRight = false;
     });
     window.addEventListener("blur", () => this.resetPointers());
@@ -67,14 +72,19 @@ export class Input {
     });
 
     canvas.addEventListener("mousemove", (e) => {
-      if (this.usingTouch) return;
+      // On phones, aim stick owns aim; ignore ghost mouse after touches
+      if (this.touchLayout || this.aimPointerId !== null) return;
       const rect = canvas.getBoundingClientRect();
       this.mouseX = e.clientX - rect.left;
       this.mouseY = e.clientY - rect.top;
     });
     canvas.addEventListener("mousedown", (e) => {
-      if (this.usingTouch) return;
-      if (e.button === 0) this.mouseDown = true;
+      // Touch layout uses FIRE / Fire+ only — blocks iOS ghost LMB
+      if (this.touchLayout) return;
+      if (e.button === 0) {
+        this.mouseBtnHeld = true;
+        this.syncMouseDown();
+      }
       if (e.button === 2) this.mouseRight = true;
     });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -86,25 +96,31 @@ export class Input {
   setViewSize(w: number, h: number): void {
     this.viewW = w;
     this.viewH = h;
-    if (!this.usingTouch) return;
-    this.applyAimToMouse();
+    if (this.aimPointerId !== null) this.applyAimToMouse();
   }
 
   setSensitivity(s: number): void {
     this.sensitivity = Math.max(0.5, Math.min(2, s));
-    if (this.usingTouch) this.applyAimToMouse();
+    if (this.aimPointerId !== null) this.applyAimToMouse();
   }
 
-  enableTouchMode(autoLoot = true, fireOnAim = true): void {
-    this.usingTouch = true;
+  /**
+   * Enable on-screen stick layout. Safe to call repeatedly — does not reset
+   * aim or kill desktop mouse.
+   */
+  enableTouchMode(autoLoot = true, fireOnAim = false): void {
+    this.touchLayout = true;
     this.autoLoot = autoLoot;
     this.fireOnAim = fireOnAim;
-    this.aimStick = { x: 1, y: 0 };
-    this.applyAimToMouse();
+  }
+
+  disableTouchMode(): void {
+    this.touchLayout = false;
+    this.resetPointers();
   }
 
   get isTouchLayout(): boolean {
-    return this.usingTouch;
+    return this.touchLayout;
   }
 
   resetPointers(): void {
@@ -117,16 +133,18 @@ export class Input {
     this.aimVisible = false;
     this.fireBtnHeld = false;
     this.aimFiring = false;
+    this.mouseBtnHeld = false;
     this.mouseDown = false;
     this.mouseRight = false;
     this.touchFire = false;
     this.fireBtnActive = false;
+    this.grenadeActive = false;
     this.keys.clear();
   }
 
   /**
-   * Mini Militia floating stick zones — stick appears under the thumb.
-   * zoneEl: full left/right half; stickEl: the visual that we reposition.
+   * Floating stick zones — stick appears under the thumb.
+   * Mouse pointers are ignored so desktop clicks never latch touch mode.
    */
   bindFloatingStick(
     zoneEl: HTMLElement,
@@ -136,19 +154,19 @@ export class Input {
     const radius = 52;
 
     zoneEl.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+      // Desktop / trackpad must never be captured by stick zones
+      if (e.pointerType === "mouse") return;
+      if (e.button !== 0 && e.pointerType !== "touch") return;
       if (kind === "move" && this.stickPointerId !== null) return;
       if (kind === "aim" && this.aimPointerId !== null) return;
       e.preventDefault();
-      this.usingTouch = true;
       try { zoneEl.setPointerCapture(e.pointerId); } catch { /* */ }
 
       const zr = zoneEl.getBoundingClientRect();
       const x = e.clientX - zr.left;
       const y = e.clientY - zr.top;
 
-      // Position visual stick under finger (clamped inside zone)
-      const half = 60;
+      const half = 56;
       const cx = Math.max(half, Math.min(zr.width - half, x));
       const cy = Math.max(half, Math.min(zr.height - half, y));
       stickEl.style.left = `${cx - half}px`;
@@ -175,6 +193,7 @@ export class Input {
     });
 
     zoneEl.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse") return;
       const zr = zoneEl.getBoundingClientRect();
       const x = e.clientX - zr.left;
       const y = e.clientY - zr.top;
@@ -207,8 +226,8 @@ export class Input {
         this.aimOrigin = null;
         this.aimVisible = false;
         this.aimFiring = false;
-        this.refreshFireState();
-        stickEl.classList.remove("active", "shown");
+        this.syncMouseDown();
+        stickEl.classList.remove("active", "shown", "firing");
         const knob = stickEl.querySelector(".stick-knob") as HTMLElement | null;
         if (knob) knob.style.transform = "translate(0,0)";
       }
@@ -246,42 +265,50 @@ export class Input {
     const dx = (x - cx) * this.sensitivity;
     const dy = (y - cy) * this.sensitivity;
     const len = Math.hypot(dx, dy) || 1;
-    const mag = Math.min(1, Math.max(0.2, len / max));
+    const mag = Math.min(1, Math.max(0.15, len / max));
     this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
     this.applyAimToMouse();
-    // Mini Militia Fire+: holding aim stick past ~35% also shoots
-    this.aimFiring = this.fireOnAim && mag >= 0.35;
-    this.refreshFireState();
+    // Fire+ only when enabled and stick pushed past ~55% (less accidental spray)
+    this.aimFiring = this.fireOnAim && mag >= 0.55;
+    this.syncMouseDown();
   }
 
-  private refreshFireState(): void {
-    const on = this.fireBtnHeld || this.aimFiring;
-    this.mouseDown = on;
-    this.touchFire = on;
+  private syncMouseDown(): void {
+    const touchFire = this.fireBtnHeld || this.aimFiring;
+    this.touchFire = touchFire;
     this.fireBtnActive = this.fireBtnHeld;
+    // Touch fire OR real mouse button — never let touch "off" wipe a held LMB on desktop
+    this.mouseDown = touchFire || this.mouseBtnHeld;
   }
 
   setFireButton(held: boolean): void {
     this.fireBtnHeld = held;
-    this.refreshFireState();
+    this.syncMouseDown();
   }
 
-  /** Cycle primary ↔ sidearm ↔ melee (Mini Militia weapon switch) */
+  /** Cycle primary ↔ sidearm ↔ melee */
   cycleWeapon(): void {
     this.weaponSlot = (this.weaponSlot + 1) % 3;
-    const key = String(this.weaponSlot + 1);
-    this.injectPress(key);
+    this.injectPress(String(this.weaponSlot + 1));
   }
 
-  /** Switch to throwables and hold fire (grenade) */
+  /** Arm throwable + fire while held; restore gun slot on release */
   startGrenade(): void {
+    this.grenadeReturnSlot = this.weaponSlot;
+    this.grenadeActive = true;
     this.injectPress("4");
     this.setFireButton(true);
   }
 
   endGrenade(): void {
+    if (!this.grenadeActive) {
+      this.setFireButton(false);
+      return;
+    }
+    this.grenadeActive = false;
     this.setFireButton(false);
-    this.injectRelease("4");
+    this.weaponSlot = this.grenadeReturnSlot % 3;
+    this.injectPress(String(this.weaponSlot + 1));
   }
 
   private applyAimToMouse(): void {
@@ -321,7 +348,9 @@ export class Input {
     if (this.down("a") || this.down("arrowleft")) x -= 1;
     if (this.down("d") || this.down("arrowright")) x += 1;
 
-    if (Math.abs(this.touchMove.x) > 0.05 || Math.abs(this.touchMove.y) > 0.05) {
+    // Touch stick wins only while actively pushed (won't zero out WASD when idle)
+    if (this.stickPointerId !== null &&
+        (Math.abs(this.touchMove.x) > 0.05 || Math.abs(this.touchMove.y) > 0.05)) {
       return { x: this.touchMove.x, y: this.touchMove.y };
     }
 
