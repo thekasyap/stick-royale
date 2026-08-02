@@ -687,8 +687,15 @@ export class Renderer {
     ctx.font = "600 11px 'IBM Plex Sans', sans-serif";
     ctx.textAlign = "center";
     ctx.fillStyle = isPlayer ? "#d4a04a" : isAlly ? "#8fd49a" : "#f0c8b0";
-    // Only name for non-player on mobile density — HP bar always for combat readability
-    ctx.fillText(f.name, f.x, f.y - 28);
+    // Player always reads as YOU so you never lose yourself in the mess
+    ctx.fillText(isPlayer ? "YOU" : f.name, f.x, f.y - 28);
+    if (isPlayer) {
+      ctx.strokeStyle = "rgba(212, 160, 74, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 18 + Math.sin((_time ?? 0) * 5) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (f.state === "alive" || f.state === "downed") {
       const hw = 28;
       const hpRatio = Math.max(0, Math.min(1, f.hp / 100));
@@ -779,6 +786,35 @@ export class Renderer {
     ctx.fillStyle = "#6a6254";
     ctx.fillRect(-8, -14, 6, 28);
     ctx.restore();
+
+    // You ride the plane as a stick — never invisible during drop phase
+    if (world.player.state === "plane") {
+      ctx.save();
+      ctx.fillStyle = "rgba(212, 160, 74, 0.35)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 22, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#d4a04a";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 22, 16, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#f0e8d8";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 26, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#d4a04a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 21);
+      ctx.lineTo(p.x, p.y - 10);
+      ctx.stroke();
+      ctx.font = "700 12px 'IBM Plex Sans', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#d4a04a";
+      ctx.fillText("YOU · TAP DROP", p.x, p.y - 42);
+      ctx.restore();
+    }
 
     // path hint
     if (anyOnPlane) {

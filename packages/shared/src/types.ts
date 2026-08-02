@@ -2,6 +2,7 @@
 
 export type Vec2 = { x: number; y: number };
 
+/** classic = 48-player BR drop; vs_ai = lightweight Practice arena */
 export type GameMode = "classic" | "vs_ai";
 export type PartySize = "solo" | "duo" | "squad";
 export type BotDifficulty = "easy" | "normal" | "hard";
@@ -88,6 +89,8 @@ export interface LootTierWeights {
 }
 
 export const LOBBY_SIZE = 48;
+/** Practice (VS AI) — far fewer bots so phones stay smooth */
+export const PRACTICE_LOBBY_SIZE = 12;
 export const TICK_RATE = 20;
 export const MAP_SIZE = 2400;
 export const PLAYER_RADIUS = 12;

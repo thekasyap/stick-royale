@@ -67,3 +67,23 @@ console.log("SMOKE OK", {
   player: mid.player.state,
   phase: mid.phaseLabel,
 });
+
+// Practice (VS AI) — ground spawn, 12 fighters, you are immediately visible/alive
+const practice = new MatchSim({
+  nickname: "Trainer",
+  mode: "vs_ai",
+  partySize: "solo",
+  difficulty: "easy",
+});
+const p0 = practice.exportRenderBundle();
+if (p0.fighters.length !== 12) {
+  throw new Error(`practice expected 12 fighters, got ${p0.fighters.length}`);
+}
+if (p0.player.state !== "alive") {
+  throw new Error(`practice player should spawn alive, got ${p0.player.state}`);
+}
+practice.tick(1 / 20, empty, 800, 600);
+console.log("SMOKE PRACTICE OK", {
+  fighters: p0.fighters.length,
+  player: p0.player.state,
+});
