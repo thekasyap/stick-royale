@@ -537,12 +537,8 @@ export class World {
       const alt = Math.ceil((p.chuteAlt ?? 0) * 100);
       this.prompt = `Altitude ${alt}% · CUT chute`;
       this.interact = { kind: "cut", label: "CUT", manual: true };
-      // Don't instant-cut from held DROP: only after chute has opened a bit, or edge tap
-      const canHoldCut = (p.chuteAlt ?? 1) < 0.9;
-      if (
-        input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0 ||
-        (canHoldCut && input.down(" "))
-      ) {
+      // Fresh press only — held DROP from the plane must not auto-cut the chute
+      if (input.pressed(" ") || input.pressed("f") || (p.chuteAlt ?? 0) <= 0) {
         p.state = "alive";
         p.invuln = 0.5;
         p.chuteAlt = 0;

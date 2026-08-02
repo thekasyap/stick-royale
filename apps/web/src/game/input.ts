@@ -40,6 +40,8 @@ export class Input {
   private mouseBtnHeld = false;
   private grenadeReturnSlot = 0;
   private grenadeActive = false;
+  /** Frames remaining to hold fire for a one-shot nade throw */
+  private grenadeFireFrames = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.mouseX = this.viewW * 0.5 + 180;
@@ -132,6 +134,7 @@ export class Input {
     this.touchFire = false;
     this.fireBtnActive = false;
     this.grenadeActive = false;
+    this.grenadeFireFrames = 0;
     this.keys.clear();
   }
 
@@ -253,11 +256,12 @@ export class Input {
     const dx = (x - cx) * this.sensitivity;
     const dy = (y - cy) * this.sensitivity;
     const len = Math.hypot(dx, dy) || 1;
-    const mag = Math.min(1, Math.max(0.12, len / max));
+    // No minimum mag — tiny drags stay tiny (old 0.12 floor snapped aim)
+    const mag = Math.min(1, len / max);
     this.aimStick = { x: (dx / len) * mag, y: (dy / len) * mag };
     this.applyAimToMouse();
-    // Pull aim stick → shoot (Mini Militia). Light touch (<30%) aims only.
-    this.aimFiring = this.fireOnAim && mag >= 0.3;
+    // Pull aim stick → shoot. Light touch (<32%) aims only.
+    this.aimFiring = this.fireOnAim && mag >= 0.32;
     this.syncMouseDown();
   }
 
@@ -273,27 +277,30 @@ export class Input {
     this.syncMouseDown();
   }
 
+  /** Keep WPN cycle aligned with sim (pickups / nades change activeSlot) */
+  syncWeaponSlot(activeSlot: number): void {
+    if (activeSlot >= 0 && activeSlot <= 2) this.weaponSlot = activeSlot;
+  }
+
   cycleWeapon(): void {
     this.weaponSlot = (this.weaponSlot + 1) % 3;
     this.injectPress(String(this.weaponSlot + 1));
   }
 
+  /** Arm throwable — fire exactly once on release (no hold-spam) */
   startGrenade(): void {
     this.grenadeReturnSlot = this.weaponSlot;
     this.grenadeActive = true;
     this.injectPress("4");
-    this.setFireButton(true);
   }
 
   endGrenade(): void {
-    if (!this.grenadeActive) {
-      this.setFireButton(false);
-      return;
-    }
+    if (!this.grenadeActive) return;
     this.grenadeActive = false;
-    this.setFireButton(false);
-    this.weaponSlot = this.grenadeReturnSlot % 3;
-    this.injectPress(String(this.weaponSlot + 1));
+    this.injectPress("4");
+    this.setFireButton(true);
+    // Hold fire across a couple sim ticks, then restore gun
+    this.grenadeFireFrames = 3;
   }
 
   private applyAimToMouse(): void {
@@ -305,6 +312,14 @@ export class Input {
   endFrame(): void {
     this.justPressed.clear();
     this.wheelDelta = 0;
+    if (this.grenadeFireFrames > 0) {
+      this.grenadeFireFrames -= 1;
+      if (this.grenadeFireFrames === 0) {
+        this.setFireButton(false);
+        this.weaponSlot = this.grenadeReturnSlot % 3;
+        this.injectPress(String(this.weaponSlot + 1));
+      }
+    }
   }
 
   injectPress(key: string): void {
