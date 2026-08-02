@@ -11,7 +11,7 @@ import { createParty, partyHostAvailable } from "./net/lobbyClient";
 
 const GUEST_KEY = "stick_royale_guest";
 const NICK_KEY = "stick_royale_nick";
-const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v6";
+const MOBILE_TIP_KEY = "stick_royale_mobile_tip_v7";
 
 function ensureGuestId(): string {
   let id = localStorage.getItem(GUEST_KEY);
@@ -356,9 +356,21 @@ class GameApp {
     const nick = $("nickname") as HTMLInputElement;
     nick.value = localStorage.getItem(NICK_KEY) || randomNick();
     const hint = $("party-hint");
-    hint.textContent = partyHostAvailable()
-      ? "Online party codes available — sim runs in Web Worker when supported."
-      : "Offline 48-player bot-fill. Deploy Cloudflare Worker for online parties.";
+    const modeSel = $("mode") as HTMLSelectElement;
+    const syncModeHint = () => {
+      if (modeSel.value === "vs_ai") {
+        hint.textContent =
+          "Practice Arena: start with an AR, fight 11 bots in a tight zone, get 8 kills (they respawn). Fast & mobile-friendly.";
+      } else if (partyHostAvailable()) {
+        hint.textContent =
+          "Battle Royale: plane drop, loot up, last of 48 standing. Online party codes available when Worker is deployed.";
+      } else {
+        hint.textContent =
+          "Battle Royale: plane drop into a 48-stick island. Loot, rotate, survive the zone.";
+      }
+    };
+    modeSel.addEventListener("change", syncModeHint);
+    syncModeHint();
 
     $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -612,12 +624,29 @@ class GameApp {
   }
 
   private syncHud(bundle: RenderBundle): void {
-    $("alive-count").textContent = String(
-      bundle.fighters.filter((f) => f.state !== "dead").length,
-    );
+    const isArena = bundle.mode === "vs_ai";
+    const badge = $("mode-badge");
+    badge.classList.toggle("arena", isArena);
+    if (isArena) {
+      const goal = bundle.practiceGoal ?? 8;
+      const kills = bundle.practiceKills ?? bundle.player.kills;
+      badge.textContent = `ARENA ${kills}/${goal}`;
+      $("alive-count").textContent = String(
+        bundle.fighters.filter((f) => f.state !== "dead").length,
+      );
+      $("phase-info").textContent = `RACE · ${bundle.phaseLabel ?? ""}`;
+    } else {
+      badge.textContent = "BR 48";
+      $("alive-count").textContent = String(
+        bundle.fighters.filter((f) => f.state !== "dead").length,
+      );
+      $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
+    }
     const kc = $("kill-count");
-    if (kc) kc.textContent = String(bundle.player.kills);
-    $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
+    if (kc) {
+      kc.textContent = String(bundle.player.kills);
+      kc.parentElement?.classList.toggle("goal", isArena);
+    }
     const p = bundle.player;
     ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
     ($("boost-fill") as HTMLDivElement).style.width = `${Math.max(0, p.boost)}%`;
@@ -706,9 +735,15 @@ class GameApp {
     $("hud").classList.add("hidden");
     $("results").classList.remove("hidden");
     const title = $("results-title");
-    title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+    const arena = r.mode === "vs_ai";
+    if (arena) {
+      title.textContent = r.winner ? "ARENA CLEARED" : "ARENA FAILED";
+      $("results-place").textContent = r.subtitle ?? `${r.kills} kills`;
+    } else {
+      title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
+      $("results-place").textContent = r.subtitle ?? `#${r.placement} / ${this.matchSize}`;
+    }
     title.classList.toggle("winner", r.winner);
-    $("results-place").textContent = `#${r.placement} / ${this.matchSize}`;
     $("stat-kills").textContent = String(r.kills);
     $("stat-damage").textContent = String(Math.round(r.damage));
     $("stat-alive").textContent = `${Math.floor(r.aliveTime)}s`;

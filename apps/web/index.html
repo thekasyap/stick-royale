@@ -38,8 +38,8 @@
               <label>
                 Mode
                 <select id="mode">
-                  <option value="classic">Battle Royale (48)</option>
-                  <option value="vs_ai">Practice vs AI (12) — smoother</option>
+                  <option value="classic">Battle Royale — 48, plane drop, survive</option>
+                  <option value="vs_ai">Practice Arena — 12, kill race to 8, respawns</option>
                 </select>
               </label>
               <label>
@@ -107,6 +107,7 @@
         <div id="hud" class="hud hidden">
         <button type="button" id="pause-btn" class="pause-btn" aria-label="Settings">☰</button>
         <div class="hud-top">
+          <div class="mode-badge" id="mode-badge">BR</div>
           <div class="alive-pill"><span id="alive-count">—</span> ALIVE</div>
           <div class="kills-pill"><span id="kill-count">0</span> KILLS</div>
           <div class="kill-feed" id="kill-feed"></div>

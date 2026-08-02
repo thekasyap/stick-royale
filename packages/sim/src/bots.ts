@@ -6,6 +6,7 @@ import {
   POIS,
   WEAPONS,
   type BotDifficulty,
+  type GameMode,
 } from "@stick-royale/shared";
 import { activeWeapon, startHeal, tryPickup, type Fighter } from "./fighter";
 import { hasLos, startReload, tryFire, type Bullet, type FragNade, type MeleeSwing, type SmokeCloud } from "./combat";
@@ -101,10 +102,29 @@ export function updateBot(
   frags: FragNade[],
   smokes: SmokeCloud[],
   rng: () => number,
+  mode: GameMode = "classic",
 ): boolean {
   if (bot.state === "dead") return false;
   const diff = bot.difficulty ?? "easy";
-  const profile = PROFILES[diff];
+  const base = PROFILES[diff];
+  // Practice Arena: bots hunt harder, loot less, push the player
+  const profile: BotProfile =
+    mode === "vs_ai"
+      ? {
+          ...base,
+          aimError: base.aimError * 0.85,
+          reaction: base.reaction * 0.75,
+          accuracy: Math.min(0.95, base.accuracy * 1.12),
+          lootGreed: base.lootGreed * 0.35,
+          engageRange: base.engageRange * 1.25,
+          fleeHp: Math.max(18, base.fleeHp - 10),
+          lead: Math.min(1, base.lead + 0.15),
+          aggression: Math.min(1.4, base.aggression + 0.35),
+          fireCone: Math.max(0.1, base.fireCone * 0.85),
+          useBoost: true,
+          useNades: base.useNades || diff === "hard",
+        }
+      : base;
 
   bot.botTimer = (bot.botTimer ?? 0) + dt;
 

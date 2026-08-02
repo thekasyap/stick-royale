@@ -327,13 +327,26 @@ body.lobby-open {
 
 .alive-pill,
 .kills-pill,
-.phase-pill {
+.phase-pill,
+.mode-badge {
   background: var(--panel);
   padding: 6px 14px;
   font-family: var(--font-brand);
   font-size: 1.25rem;
   letter-spacing: 0.08em;
   border: 1px solid rgba(196, 181, 154, 0.2);
+}
+
+.mode-badge {
+  font-size: 1.05rem;
+  color: #d4a04a;
+  border-color: rgba(212, 160, 74, 0.45);
+}
+
+.mode-badge.arena {
+  color: #e07040;
+  border-color: rgba(224, 112, 64, 0.55);
+  background: rgba(60, 28, 18, 0.85);
 }
 
 .kill-feed {
