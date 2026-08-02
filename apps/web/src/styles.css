@@ -78,6 +78,27 @@ body.lobby-open {
     radial-gradient(ellipse 50% 40% at 20% 80%, rgba(90, 107, 69, 0.35), transparent 50%),
     linear-gradient(165deg, #1e2a1c 0%, #2c3a28 40%, #1a2218 100%);
   animation: drift 18s ease-in-out infinite alternate;
+  transition: background 0.45s ease;
+}
+
+.lobby.mode-arena .lobby-atmosphere {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 35%, rgba(224, 96, 48, 0.28), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 80% 75%, rgba(90, 40, 28, 0.45), transparent 50%),
+    linear-gradient(165deg, #2a1814 0%, #3a241c 42%, #1a120e 100%);
+}
+
+.lobby.mode-arena .lobby-tag {
+  color: #e07040;
+}
+
+.lobby.mode-arena .brand {
+  text-shadow: 0 4px 0 #3a1810, 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.lobby.mode-arena .cta {
+  background: linear-gradient(180deg, #e88850, #c44a22);
+  color: #1a0e08;
 }
 
 .lobby-atmosphere::after {
@@ -97,9 +118,103 @@ body.lobby-open {
 .lobby-content {
   position: relative;
   text-align: center;
-  max-width: 440px;
+  max-width: 520px;
   padding: 2rem 1.5rem;
   animation: rise 0.9s ease-out both;
+}
+
+.mode-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 0.85rem 0.9rem 1rem;
+  border: 1px solid rgba(196, 181, 154, 0.28);
+  background: rgba(12, 16, 10, 0.55);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+  font-family: var(--font-ui);
+}
+
+.mode-card:hover {
+  border-color: rgba(212, 160, 74, 0.55);
+  transform: translateY(-1px);
+}
+
+.mode-card.active {
+  border-color: var(--accent);
+  background: rgba(40, 48, 28, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(212, 160, 74, 0.25);
+}
+
+.lobby.mode-arena .mode-card.active {
+  border-color: #e07040;
+  background: rgba(60, 28, 18, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(224, 112, 64, 0.3);
+}
+
+.mode-card-tag {
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mode-card.active .mode-card-tag {
+  color: var(--accent);
+}
+
+.lobby.mode-arena .mode-card.active .mode-card-tag {
+  color: #e88850;
+}
+
+.mode-card strong {
+  font-family: var(--font-brand);
+  font-size: 1.45rem;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.mode-card em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--sand);
+  line-height: 1.35;
+}
+
+.mode-bullets {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.mode-diff-note span {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--sand);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(196, 181, 154, 0.25);
+  background: rgba(12, 16, 10, 0.65);
+}
+
+@media (max-width: 560px) {
+  .mode-picker {
+    grid-template-columns: 1fr;
+  }
 }
 
 @keyframes rise {
@@ -347,6 +462,81 @@ body.lobby-open {
   color: #e07040;
   border-color: rgba(224, 112, 64, 0.55);
   background: rgba(60, 28, 18, 0.85);
+}
+
+.kills-pill.goal {
+  color: #e88850;
+  border-color: rgba(224, 112, 64, 0.5);
+  background: rgba(60, 28, 18, 0.8);
+}
+
+.race-meter {
+  position: absolute;
+  top: max(52px, calc(env(safe-area-inset-top) + 44px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 72vw);
+  z-index: 8;
+  pointer-events: none;
+  text-align: center;
+}
+
+.race-label {
+  font-family: var(--font-brand);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: #e88850;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
+  margin-bottom: 4px;
+}
+
+.race-track {
+  height: 10px;
+  background: rgba(18, 12, 10, 0.75);
+  border: 1px solid rgba(224, 112, 64, 0.45);
+  overflow: hidden;
+}
+
+.race-track #race-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #c44a22, #e88850);
+  transition: width 0.25s ease-out;
+}
+
+body.mode-arena .hud-top .alive-pill,
+body.mode-arena .hud-top .phase-pill {
+  border-color: rgba(224, 112, 64, 0.35);
+}
+
+body.mode-classic .mode-badge:not(.arena) {
+  animation: brPulse 2.8s ease-in-out infinite;
+}
+
+@keyframes brPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
+}
+
+.results-mode {
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+}
+
+.results-card.arena .results-mode {
+  color: #e88850;
+}
+
+.results-card.arena {
+  border-color: rgba(224, 112, 64, 0.45);
+  background: linear-gradient(180deg, #3a241c, #1a120e);
+}
+
+.results-card.arena #results-title {
+  color: #e88850;
 }
 
 .kill-feed {

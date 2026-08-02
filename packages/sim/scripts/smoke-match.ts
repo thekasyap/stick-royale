@@ -91,6 +91,13 @@ if (p0.practiceGoal !== 8) {
 if (p0.zone.phases.length !== 5) {
   throw new Error(`practice zone should have 5 phases, got ${p0.zone.phases.length}`);
 }
+if (!p0.practiceHome) {
+  throw new Error("practice should export practiceHome for arena floor");
+}
+const armedBots = p0.fighters.filter((f) => f.isBot && f.primary).length;
+if (armedBots < 10) {
+  throw new Error(`practice bots should all start armed, got ${armedBots}`);
+}
 practice.tick(1 / 20, empty, 800, 600);
 console.log("SMOKE PRACTICE OK", {
   fighters: p0.fighters.length,
@@ -98,4 +105,6 @@ console.log("SMOKE PRACTICE OK", {
   primary: p0.player.primary.weaponId,
   goal: p0.practiceGoal,
   zonePhases: p0.zone.phases.length,
+  practiceHome: p0.practiceHome,
+  armedBots,
 });

@@ -308,21 +308,56 @@ export class World {
       bot.botState = "engage";
       bot.botTimer = this.rng() * 0.8;
       bot.invuln = 0.35;
-      // Light starter so they can fight back
-      if (this.rng() > 0.35) {
-        const wid = this.rng() > 0.5 ? "buzzsaw" : "sparkwave";
-        const def = WEAPONS[wid]!;
-        bot.primary = { weaponId: wid, ammoInMag: def.magSize, attachments: {} };
-        bot.activeSlot = 0;
-        if (def.ammo) bot.ammo[def.ammo] = 60;
-      }
+      // Every practice bot starts armed — this is a fight pit, not a loot scramble
+      const wid = this.rng() > 0.45 ? "buzzsaw" : this.rng() > 0.5 ? "sparkwave" : "rattler";
+      const def = WEAPONS[wid]!;
+      bot.primary = { weaponId: wid, ammoInMag: def.magSize, attachments: {} };
+      bot.activeSlot = 0;
+      if (def.ammo) bot.ammo[def.ammo] = 80;
+      bot.helmet = this.rng() > 0.5 ? 1 : 0;
+      bot.vest = this.rng() > 0.4 ? 1 : 0;
       this.fighters.push(bot);
     }
 
     this.camera.x = this.player.x;
     this.camera.y = this.player.y;
-    this.camera.zoom = 1;
-    this.prompt = `ARENA · Get ${PRACTICE_KILL_TARGET} kills`;
+    this.camera.zoom = 1.15;
+    this.seedArenaLoot();
+    this.prompt = `ARENA · Get ${PRACTICE_KILL_TARGET} kills · bots respawn`;
+  }
+
+  /** Hot crates around the arena so practice is fight-first, not loot scavenger hunt. */
+  private seedArenaLoot(): void {
+    const guns = ["buzzsaw", "rattler", "longreach", "sparkwave", "ironclad"] as const;
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      const rad = 70 + (i % 3) * 45;
+      const wid = guns[i % guns.length]!;
+      this.map.loot.push({
+        id: `arena_wpn_${i}`,
+        x: this.practiceHome.x + Math.cos(ang) * rad,
+        y: this.practiceHome.y + Math.sin(ang) * rad,
+        items: [
+          { type: "weapon", weaponId: wid },
+          { type: "ammo", ammo: "556", amount: 60 },
+          { type: "ammo", ammo: "762", amount: 40 },
+        ],
+      });
+    }
+    for (let i = 0; i < 4; i++) {
+      const ang = this.rng() * Math.PI * 2;
+      const rad = 50 + this.rng() * 90;
+      this.map.loot.push({
+        id: `arena_heal_${i}`,
+        x: this.practiceHome.x + Math.cos(ang) * rad,
+        y: this.practiceHome.y + Math.sin(ang) * rad,
+        items: [
+          { type: "heal", healId: "bandage", amount: 5 },
+          { type: "heal", healId: "medkit", amount: 1 },
+          { type: "armor", armorId: i % 2 === 0 ? "vest_2" : "helmet_2" },
+        ],
+      });
+    }
   }
 
   update(dt: number, input: GameInput, viewW: number, viewH: number): void {
@@ -907,7 +942,10 @@ export class World {
     this.spawnDeathCrate(victim);
 
     if (this.mode === "vs_ai" && victim.isBot) {
-      this.practiceRespawns.push({ id: victim.id, at: this.time + 3.5 + this.rng() * 1.5 });
+      this.practiceRespawns.push({ id: victim.id, at: this.time + 2.0 + this.rng() * 1.2 });
+      if (attacker?.id === this.player.id) {
+        this.prompt = `ARENA · ${this.player.kills} / ${PRACTICE_KILL_TARGET} kills`;
+      }
     }
   }
 
@@ -994,7 +1032,8 @@ export class World {
 
   private updateCamera(viewW: number, viewH: number): void {
     const p = this.player;
-    let targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.65 : 1;
+    const groundZoom = this.mode === "vs_ai" ? 1.18 : 1;
+    let targetZoom = p.state === "plane" ? 0.45 : p.state === "parachute" ? 0.65 : groundZoom;
     // ADS zoom from scope attachment
     if (p.state === "alive") {
       const gun = activeWeapon(p);
@@ -1156,6 +1195,7 @@ export class World {
       mode: this.mode,
       practiceGoal: this.mode === "vs_ai" ? PRACTICE_KILL_TARGET : null,
       practiceKills: this.mode === "vs_ai" ? this.player.kills : null,
+      practiceHome: this.mode === "vs_ai" ? this.practiceHome : null,
     };
   }
 }

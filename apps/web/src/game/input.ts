@@ -273,6 +273,11 @@ export class Input {
     this.syncMouseDown();
   }
 
+  /** Keep WPN cycle in sync with the sim after slot changes (loot / nade return). */
+  syncWeaponSlot(activeSlot: number): void {
+    if (activeSlot >= 0 && activeSlot <= 2) this.weaponSlot = activeSlot;
+  }
+
   cycleWeapon(): void {
     this.weaponSlot = (this.weaponSlot + 1) % 3;
     this.injectPress(String(this.weaponSlot + 1));

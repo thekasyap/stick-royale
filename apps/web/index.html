@@ -21,12 +21,12 @@
   </head>
   <body>
     <div id="app">
-      <div id="lobby" class="lobby">
+      <div id="lobby" class="lobby mode-br">
         <div class="lobby-atmosphere" aria-hidden="true"></div>
         <div class="lobby-content">
-          <p class="lobby-tag">Offline Solo · Bot Fill</p>
+          <p class="lobby-tag" id="lobby-tag">Offline Solo · Bot Fill</p>
           <h1 class="brand">STICK ROYALE</h1>
-          <p class="lobby-sub">Drop in. Loot up. Be the last stick standing.</p>
+          <p class="lobby-sub" id="lobby-sub">Drop in. Loot up. Be the last stick standing.</p>
 
           <form id="lobby-form" class="lobby-form" autocomplete="off">
             <label>
@@ -34,14 +34,31 @@
               <input id="nickname" type="text" maxlength="16" placeholder="StickHero" required />
             </label>
 
-            <div class="row">
-              <label>
-                Mode
-                <select id="mode">
-                  <option value="classic">Battle Royale — 48, plane drop, survive</option>
-                  <option value="vs_ai">Practice Arena — 12, kill race to 8, respawns</option>
-                </select>
-              </label>
+            <div class="mode-picker" id="mode-picker" role="radiogroup" aria-label="Game mode">
+              <button type="button" class="mode-card active" data-mode="classic" id="mode-br" role="radio" aria-checked="true">
+                <span class="mode-card-tag">MAIN MODE</span>
+                <strong>BATTLE ROYALE</strong>
+                <em>Plane drop · 48 sticks · Survive the zone</em>
+                <ul class="mode-bullets">
+                  <li>Long match · loot &amp; rotate</li>
+                  <li>Care packages · red zones</li>
+                  <li>Win = last team standing</li>
+                </ul>
+              </button>
+              <button type="button" class="mode-card" data-mode="vs_ai" id="mode-practice" role="radio" aria-checked="false">
+                <span class="mode-card-tag">TRAINING</span>
+                <strong>PRACTICE ARENA</strong>
+                <em>Hot spawn · Kill race to 8 · Bots respawn</em>
+                <ul class="mode-bullets">
+                  <li>Start with AR + armor</li>
+                  <li>Tight fast zone · no plane</li>
+                  <li>Win = 8 eliminations</li>
+                </ul>
+              </button>
+            </div>
+            <input type="hidden" id="mode" value="classic" />
+
+            <div class="row" id="br-extras">
               <label>
                 Team
                 <select id="party-size">
@@ -49,6 +66,10 @@
                   <option value="duo">Duo</option>
                   <option value="squad">Squad</option>
                 </select>
+              </label>
+              <label>
+                Party code
+                <input id="party-code" type="text" maxlength="6" placeholder="Optional" />
               </label>
             </div>
 
@@ -61,9 +82,9 @@
                   <option value="hard">Hard</option>
                 </select>
               </label>
-              <label>
-                Party code
-                <input id="party-code" type="text" maxlength="6" placeholder="Optional" />
+              <label class="mode-diff-note" id="mode-diff-note">
+                Match feel
+                <span id="mode-feel">Island drop · ~12 min</span>
               </label>
             </div>
 
@@ -108,10 +129,14 @@
         <button type="button" id="pause-btn" class="pause-btn" aria-label="Settings">☰</button>
         <div class="hud-top">
           <div class="mode-badge" id="mode-badge">BR</div>
-          <div class="alive-pill"><span id="alive-count">—</span> ALIVE</div>
-          <div class="kills-pill"><span id="kill-count">0</span> KILLS</div>
+          <div class="alive-pill"><span id="alive-count">—</span> <span id="alive-label">ALIVE</span></div>
+          <div class="kills-pill" id="kills-pill"><span id="kill-count">0</span> <span id="kills-label">KILLS</span></div>
           <div class="kill-feed" id="kill-feed"></div>
           <div class="phase-pill" id="phase-info">PHASE 1</div>
+        </div>
+        <div id="race-meter" class="race-meter hidden" aria-hidden="true">
+          <div class="race-label">KILL RACE · <span id="race-count">0</span>/<span id="race-goal">8</span></div>
+          <div class="race-track"><div id="race-fill"></div></div>
         </div>
         <canvas id="minimap" width="160" height="160"></canvas>
         <div class="hud-bottom">
@@ -191,13 +216,14 @@
       </div>
 
       <div id="results" class="results hidden">
-        <div class="results-card">
+        <div class="results-card" id="results-card">
+          <p class="results-mode" id="results-mode">BATTLE ROYALE</p>
           <h2 id="results-title">CHICKEN DINNER</h2>
           <p id="results-place">#1</p>
           <div class="results-stats">
-            <div><span id="stat-kills">0</span><label>Kills</label></div>
+            <div><span id="stat-kills">0</span><label id="stat-kills-label">Kills</label></div>
             <div><span id="stat-damage">0</span><label>Damage</label></div>
-            <div><span id="stat-alive">0</span><label>Survived</label></div>
+            <div><span id="stat-alive">0</span><label id="stat-time-label">Survived</label></div>
           </div>
           <button id="play-again" class="cta">PLAY AGAIN</button>
         </div>

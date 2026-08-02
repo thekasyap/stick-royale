@@ -78,20 +78,34 @@ class GameApp {
     $("pause-btn").addEventListener("click", () => this.openSettings(true));
   }
 
-  /** Block pinch/double-tap browser zoom that leaves black bars */
+  /**
+   * Hard-block browser zoom. Never CSS-transform #app — that desyncs touch
+   * coords from the canvas and made zoom "recovery" worse than the zoom itself.
+   */
   private bindViewportLock(): void {
-    const block = (e: Event) => {
+    const blockGestures = (e: Event) => {
       if (!this.running) return;
       e.preventDefault();
     };
-    document.addEventListener("gesturestart", block as EventListener, { passive: false });
-    document.addEventListener("gesturechange", block as EventListener, { passive: false });
-    document.addEventListener("gestureend", block as EventListener, { passive: false });
+    for (const ev of ["gesturestart", "gesturechange", "gestureend"] as const) {
+      document.addEventListener(ev, blockGestures as EventListener, { passive: false });
+    }
+
+    document.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!this.running) return;
+        if (e.touches.length > 1) e.preventDefault();
+      },
+      { passive: false },
+    );
     document.addEventListener(
       "touchmove",
       (e) => {
         if (!this.running) return;
         if (e.touches.length > 1) e.preventDefault();
+        const te = e as TouchEvent & { scale?: number };
+        if (typeof te.scale === "number" && te.scale !== 1) e.preventDefault();
       },
       { passive: false },
     );
@@ -102,58 +116,48 @@ class GameApp {
       },
       { passive: false },
     );
-    // Kill iOS double-tap zoom while in match
+
     let lastTap = 0;
     document.addEventListener(
       "touchend",
       (e) => {
         if (!this.running) return;
+        const t = e.target as HTMLElement | null;
+        if (t?.closest?.("button, a, input, select, label, .mbtn, .heal-pill, .mode-card")) return;
         const now = performance.now();
-        if (now - lastTap < 350) e.preventDefault();
+        if (now - lastTap < 320) e.preventDefault();
         lastTap = now;
-        this.recoverViewportZoom();
       },
       { passive: false },
     );
+
     window.visualViewport?.addEventListener("resize", () => {
-      if (this.running) this.recoverViewportZoom();
+      if (this.running) {
+        this.clearAppZoomHacks();
+        this.fixViewportScroll();
+        this.resize();
+      }
     });
   }
 
-  /** If the browser still zooms, compensate so the game stays playable */
-  private recoverViewportZoom(): void {
-    if (!this.running) return;
-    const vv = window.visualViewport;
-    const scale = vv?.scale ?? 1;
+  /** Strip any leftover transform hacks from older builds */
+  private clearAppZoomHacks(): void {
     const app = $("app");
-    if (Math.abs(scale - 1) > 0.02) {
-      // Counter-scale the app so gameplay fills the visual viewport
-      app.style.transform = `scale(${1 / scale})`;
-      app.style.transformOrigin = "0 0";
-      app.style.width = `${scale * 100}vw`;
-      app.style.height = `${scale * 100}vh`;
-      // Nudge viewport meta (helps some Android WebViews)
-      const meta = document.querySelector('meta[name="viewport"]');
-      if (meta) {
-        meta.setAttribute(
-          "content",
-          "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no",
-        );
-      }
-    } else {
-      app.style.transform = "";
-      app.style.transformOrigin = "";
-      app.style.width = "";
-      app.style.height = "";
-    }
-    window.scrollTo(0, 0);
+    app.style.transform = "";
+    app.style.transformOrigin = "";
+    app.style.width = "";
+    app.style.height = "";
+    const meta = document.querySelector('meta[name="viewport"]');
+    meta?.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no",
+    );
   }
 
   private fixViewportScroll(): void {
     if (!this.running) return;
-    this.recoverViewportZoom();
     window.scrollTo(0, 0);
-    if (window.visualViewport && window.visualViewport.offsetTop !== 0) {
+    if (window.visualViewport && Math.abs(window.visualViewport.offsetTop) > 0.5) {
       window.scrollTo(0, 0);
     }
   }
@@ -355,34 +359,62 @@ class GameApp {
   private bindLobby(): void {
     const nick = $("nickname") as HTMLInputElement;
     nick.value = localStorage.getItem(NICK_KEY) || randomNick();
-    const hint = $("party-hint");
-    const modeSel = $("mode") as HTMLSelectElement;
-    const syncModeHint = () => {
-      if (modeSel.value === "vs_ai") {
+    const modeInput = $("mode") as HTMLInputElement;
+    const syncModeUi = (mode: GameMode) => {
+      modeInput.value = mode;
+      const lobby = $("lobby");
+      lobby.classList.toggle("mode-br", mode === "classic");
+      lobby.classList.toggle("mode-arena", mode === "vs_ai");
+      for (const card of document.querySelectorAll<HTMLButtonElement>(".mode-card")) {
+        const on = card.dataset.mode === mode;
+        card.classList.toggle("active", on);
+        card.setAttribute("aria-checked", on ? "true" : "false");
+      }
+      const arena = mode === "vs_ai";
+      $("lobby-tag").textContent = arena
+        ? "Training · Kill Race · Respawns"
+        : "Offline Solo · Bot Fill";
+      $("lobby-sub").textContent = arena
+        ? "Hot spawn with an AR. Frag 8 bots. They come back for more."
+        : "Drop in. Loot up. Be the last stick standing.";
+      $("start-btn").textContent = arena ? "ENTER ARENA" : "DROP IN";
+      $("mode-feel").textContent = arena
+        ? "Tight arena · ~3–5 min"
+        : "Island drop · ~10–14 min";
+      $("br-extras").classList.toggle("hidden", arena);
+      const hint = $("party-hint");
+      if (arena) {
         hint.textContent =
-          "Practice Arena: start with an AR, fight 11 bots in a tight zone, get 8 kills (they respawn). Fast & mobile-friendly.";
+          "Practice is a different game: no plane, kill race to 8, bots respawn, orange arena ring.";
       } else if (partyHostAvailable()) {
         hint.textContent =
-          "Battle Royale: plane drop, loot up, last of 48 standing. Online party codes available when Worker is deployed.";
+          "Battle Royale: plane drop, loot the island, last of 48 standing. Party codes when Worker is live.";
       } else {
         hint.textContent =
-          "Battle Royale: plane drop into a 48-stick island. Loot, rotate, survive the zone.";
+          "Battle Royale: plane into 48 sticks. Loot, rotate, survive care packages & the blue zone.";
       }
     };
-    modeSel.addEventListener("change", syncModeHint);
-    syncModeHint();
+    $("mode-picker").addEventListener("click", (e) => {
+      const card = (e.target as HTMLElement).closest<HTMLButtonElement>(".mode-card");
+      if (!card?.dataset.mode) return;
+      syncModeUi(card.dataset.mode as GameMode);
+    });
+    syncModeUi((modeInput.value as GameMode) || "classic");
 
     $("lobby-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       this.audio.unlock();
       const nickname = nick.value.trim().slice(0, 16) || "StickHero";
       localStorage.setItem(NICK_KEY, nickname);
-      const mode = ($("mode") as HTMLSelectElement).value as GameMode;
-      const partySize = ($("party-size") as HTMLSelectElement).value as PartySize;
+      const mode = ($("mode") as HTMLInputElement).value as GameMode;
+      const partySize =
+        mode === "vs_ai"
+          ? "solo"
+          : (($("party-size") as HTMLSelectElement).value as PartySize);
       const difficulty = ($("difficulty") as HTMLSelectElement).value as BotDifficulty;
       const partyCode = ($("party-code") as HTMLInputElement).value.trim().toUpperCase();
 
-      if (!partyCode && partyHostAvailable()) {
+      if (mode === "classic" && !partyCode && partyHostAvailable()) {
         const created = await createParty(nickname);
         if (created) {
           ($("party-code") as HTMLInputElement).value = created.code;
@@ -396,10 +428,9 @@ class GameApp {
   private resize(): void {
     const maxDpr = this.settings.lowPower ? 1.25 : 2;
     const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-    // visualViewport fixes black bars after accidental browser zoom
-    const vv = window.visualViewport;
-    const w = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
-    const h = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
+    // Layout viewport — NOT visualViewport (pinch zoom shrinks VV and desyncs the game)
+    const w = Math.max(1, Math.floor(window.innerWidth));
+    const h = Math.max(1, Math.floor(window.innerHeight));
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
     this.canvas.style.width = `${w}px`;
@@ -413,8 +444,12 @@ class GameApp {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
+    document.documentElement.classList.add("playing");
     document.body.classList.add("playing");
+    document.body.classList.toggle("mode-arena", config.mode === "vs_ai");
+    document.body.classList.toggle("mode-classic", config.mode === "classic");
     document.body.classList.remove("lobby-open");
+    this.clearAppZoomHacks();
     this.matchSize = config.mode === "vs_ai" ? PRACTICE_LOBBY_SIZE : LOBBY_SIZE;
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
@@ -448,6 +483,10 @@ class GameApp {
 
   private maybeShowMobileTip(): void {
     const tip = $("mobile-tip");
+    const arena = document.body.classList.contains("mode-arena");
+    tip.textContent = arena
+      ? "PRACTICE: Left MOVE · Right AIM+SHOOT · Kill race meter at top — get 8"
+      : "BR: Left MOVE · Right AIM+SHOOT · Jump from plane · Essentials auto-loot";
     if (localStorage.getItem(MOBILE_TIP_KEY) === "1") {
       tip.classList.add("hidden");
       return;
@@ -543,15 +582,14 @@ class GameApp {
     this.input.resetPointers();
     if (!this.touchMode) this.input.disableTouchMode();
     void this.exitImmersive();
-    document.body.classList.remove("playing", "touch-mode");
+    document.documentElement.classList.remove("playing");
+    document.body.classList.remove("playing", "touch-mode", "mode-arena", "mode-classic");
     document.body.classList.add("lobby-open");
-    const app = $("app");
-    app.style.transform = "";
-    app.style.width = "";
-    app.style.height = "";
+    this.clearAppZoomHacks();
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
+    $("race-meter").classList.add("hidden");
     $("settings-modal").classList.add("hidden");
     $("lobby").classList.remove("hidden");
   }
@@ -568,9 +606,8 @@ class GameApp {
 
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    const vv = window.visualViewport;
-    const viewW = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
-    const viewH = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
+    const viewW = Math.max(1, Math.floor(window.innerWidth));
+    const viewH = Math.max(1, Math.floor(window.innerHeight));
     this.host.tick(dt, this.input, viewW, viewH);
     if (this.bundle) {
       this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY, {
@@ -587,7 +624,7 @@ class GameApp {
       }
     }
     this.syncTouchOverlay();
-    this.recoverViewportZoom();
+    if (this.bundle) this.input.syncWeaponSlot(this.bundle.player.activeSlot);
     this.input.endFrame();
 
     if (this.host.matchOver && this.host.result) {
@@ -627,25 +664,37 @@ class GameApp {
     const isArena = bundle.mode === "vs_ai";
     const badge = $("mode-badge");
     badge.classList.toggle("arena", isArena);
+    const goal = bundle.practiceGoal ?? 8;
+    const kills = bundle.practiceKills ?? bundle.player.kills;
     if (isArena) {
-      const goal = bundle.practiceGoal ?? 8;
-      const kills = bundle.practiceKills ?? bundle.player.kills;
-      badge.textContent = `ARENA ${kills}/${goal}`;
+      badge.textContent = "ARENA";
       $("alive-count").textContent = String(
-        bundle.fighters.filter((f) => f.state !== "dead").length,
+        bundle.fighters.filter((f) => f.isBot && f.state !== "dead").length,
       );
+      $("alive-label").textContent = "BOTS";
+      $("kills-label").textContent = `/${goal}`;
       $("phase-info").textContent = `RACE · ${bundle.phaseLabel ?? ""}`;
+      const race = $("race-meter");
+      race.classList.remove("hidden");
+      race.setAttribute("aria-hidden", "false");
+      $("race-count").textContent = String(kills);
+      $("race-goal").textContent = String(goal);
+      ($("race-fill") as HTMLDivElement).style.width = `${Math.min(100, (kills / goal) * 100)}%`;
     } else {
       badge.textContent = "BR 48";
       $("alive-count").textContent = String(
         bundle.fighters.filter((f) => f.state !== "dead").length,
       );
+      $("alive-label").textContent = "ALIVE";
+      $("kills-label").textContent = "KILLS";
       $("phase-info").textContent = bundle.phaseLabel ?? `PHASE ${bundle.zone.phaseIndex + 1}`;
+      $("race-meter").classList.add("hidden");
+      $("race-meter").setAttribute("aria-hidden", "true");
     }
     const kc = $("kill-count");
     if (kc) {
       kc.textContent = String(bundle.player.kills);
-      kc.parentElement?.classList.toggle("goal", isArena);
+      $("kills-pill").classList.toggle("goal", isArena);
     }
     const p = bundle.player;
     ($("hp-fill") as HTMLDivElement).style.width = `${Math.max(0, p.hp)}%`;
@@ -733,15 +782,25 @@ class GameApp {
 
   private showResults(r: NonNullable<RenderBundle["result"]>): void {
     $("hud").classList.add("hidden");
+    $("race-meter").classList.add("hidden");
     $("results").classList.remove("hidden");
     const title = $("results-title");
+    const card = $("results-card");
     const arena = r.mode === "vs_ai";
+    card.classList.toggle("arena", arena);
+    $("results-mode").textContent = arena ? "PRACTICE ARENA" : "BATTLE ROYALE";
     if (arena) {
       title.textContent = r.winner ? "ARENA CLEARED" : "ARENA FAILED";
       $("results-place").textContent = r.subtitle ?? `${r.kills} kills`;
+      $("stat-kills-label").textContent = "Eliminations";
+      $("stat-time-label").textContent = "Fight time";
+      $("play-again").textContent = "BACK TO LOBBY";
     } else {
       title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
       $("results-place").textContent = r.subtitle ?? `#${r.placement} / ${this.matchSize}`;
+      $("stat-kills-label").textContent = "Kills";
+      $("stat-time-label").textContent = "Survived";
+      $("play-again").textContent = "PLAY AGAIN";
     }
     title.classList.toggle("winner", r.winner);
     $("stat-kills").textContent = String(r.kills);
@@ -755,7 +814,9 @@ class GameApp {
     this.host?.destroy();
     this.host = null;
     cancelAnimationFrame(this.raf);
+    document.documentElement.classList.remove("playing");
     document.body.classList.remove("playing");
+    this.clearAppZoomHacks();
   }
 }
 
