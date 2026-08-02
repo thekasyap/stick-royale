@@ -1,4 +1,5 @@
 import type { BotDifficulty, GameMode, PartySize } from "@stick-royale/shared";
+import { LOBBY_SIZE, PRACTICE_LOBBY_SIZE } from "@stick-royale/shared";
 import type { MatchConfig, RenderBundle } from "@stick-royale/sim";
 import { WEAPONS } from "@stick-royale/shared";
 import { GameAudio } from "./game/audio";
@@ -46,6 +47,7 @@ class GameApp {
   private running = false;
   private paused = false;
   private touchMode = false;
+  private matchSize = LOBBY_SIZE;
   private mobileTipShown = false;
   private lastKillFeed = "";
   private lastPrompt = "";
@@ -401,6 +403,7 @@ class GameApp {
     $("hud").classList.remove("hidden");
     document.body.classList.add("playing");
     document.body.classList.remove("lobby-open");
+    this.matchSize = config.mode === "vs_ai" ? PRACTICE_LOBBY_SIZE : LOBBY_SIZE;
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
       this.input.enableTouchMode(true, true);
@@ -705,7 +708,7 @@ class GameApp {
     const title = $("results-title");
     title.textContent = r.winner ? "CHICKEN DINNER" : "ELIMINATED";
     title.classList.toggle("winner", r.winner);
-    $("results-place").textContent = `#${r.placement} / 48`;
+    $("results-place").textContent = `#${r.placement} / ${this.matchSize}`;
     $("stat-kills").textContent = String(r.kills);
     $("stat-damage").textContent = String(Math.round(r.damage));
     $("stat-alive").textContent = `${Math.floor(r.aliveTime)}s`;

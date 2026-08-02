@@ -5,6 +5,8 @@ import {
   MAP_SIZE,
   PLAYER_ADS_SPEED,
   PLAYER_SPEED,
+  POIS,
+  PRACTICE_LOBBY_SIZE,
   REVIVE_RANGE,
   STARTER_MELEE,
   STARTER_WEAPON,
@@ -191,9 +193,12 @@ export class World {
   }
 
   private spawnFighters(nickname: string): void {
+    if (this.mode === "vs_ai") {
+      this.spawnPractice(nickname);
+      return;
+    }
+
     const cap = teamSizeCapacity(this.partySize);
-    const humanTeams = Math.floor(LOBBY_SIZE / cap);
-    void humanTeams;
     const botCount = LOBBY_SIZE - 1;
     const names = assignBotNames(botCount, this.seed);
 
@@ -219,12 +224,9 @@ export class World {
       }
     }
 
-    const enemyStart = this.mode === "vs_ai" ? 100 : 1;
     for (let i = 0; i < botCount - allyBots; i++) {
       const teamId =
-        this.partySize === "solo"
-          ? i + 1
-          : enemyStart + Math.floor(i / cap);
+        this.partySize === "solo" ? i + 1 : 1 + Math.floor(i / cap);
       const bot = createFighter(
         `bot_${i}`,
         names[i]!,
@@ -237,6 +239,56 @@ export class World {
       bot.botTimer = this.rng() * 2;
       this.fighters.push(bot);
     }
+  }
+
+  /** Lightweight Practice: ground spawn, 12 sticks, no plane — mobile-friendly */
+  private spawnPractice(nickname: string): void {
+    const botCount = PRACTICE_LOBBY_SIZE - 1;
+    const names = assignBotNames(botCount, this.seed);
+    const home = POIS[Math.floor(this.rng() * POIS.length)]!;
+
+    this.player = createFighter(
+      "player",
+      nickname || "StickHero",
+      home.x + (this.rng() - 0.5) * 40,
+      home.y + (this.rng() - 0.5) * 40,
+      false,
+    );
+    this.player.teamId = 0;
+    this.player.state = "alive";
+    this.player.chuteAlt = 0;
+    this.player.invuln = 1.2;
+    this.player.heals = { bandage: 5, medkit: 1, energy_drink: 2, painkiller: 1 };
+    this.player.ammo = { "556": 90, "762": 30, "9mm": 90, "12g": 12, "45": 30 };
+    this.fighters.push(this.player);
+
+    // Skip the plane phase entirely
+    this.plane.pathT = 2;
+    this.zoneStarted = true;
+
+    for (let i = 0; i < botCount; i++) {
+      const poi = POIS[Math.floor(this.rng() * POIS.length)]!;
+      const bot = createFighter(
+        `bot_${i}`,
+        names[i]!,
+        poi.x + (this.rng() - 0.5) * poi.radius,
+        poi.y + (this.rng() - 0.5) * poi.radius,
+        true,
+        this.difficulty,
+      );
+      bot.teamId = i + 1;
+      bot.state = "alive";
+      bot.chuteAlt = 0;
+      bot.botState = "loot";
+      bot.botTimer = this.rng() * 1.5;
+      bot.invuln = 0.4;
+      this.fighters.push(bot);
+    }
+
+    // Camera snaps to you immediately
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+    this.camera.zoom = 1;
   }
 
   update(dt: number, input: GameInput, viewW: number, viewH: number): void {
