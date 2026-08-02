@@ -78,20 +78,36 @@ class GameApp {
     $("pause-btn").addEventListener("click", () => this.openSettings(true));
   }
 
-  /** Block pinch/double-tap browser zoom that leaves black bars */
+  /**
+   * Hard-block browser zoom. Never CSS-transform #app — that desyncs touch
+   * coords from the canvas and made zoom "recovery" worse than the zoom itself.
+   */
   private bindViewportLock(): void {
-    const block = (e: Event) => {
+    const blockGestures = (e: Event) => {
       if (!this.running) return;
       e.preventDefault();
     };
-    document.addEventListener("gesturestart", block as EventListener, { passive: false });
-    document.addEventListener("gesturechange", block as EventListener, { passive: false });
-    document.addEventListener("gestureend", block as EventListener, { passive: false });
+    for (const ev of ["gesturestart", "gesturechange", "gestureend"] as const) {
+      document.addEventListener(ev, blockGestures as EventListener, { passive: false });
+    }
+
+    document.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!this.running) return;
+        if (e.touches.length > 1) e.preventDefault();
+      },
+      { passive: false },
+    );
     document.addEventListener(
       "touchmove",
       (e) => {
         if (!this.running) return;
+        // Pinch / multi-touch zoom
         if (e.touches.length > 1) e.preventDefault();
+        // iOS Safari exposes scale on some TouchEvents
+        const te = e as TouchEvent & { scale?: number };
+        if (typeof te.scale === "number" && te.scale !== 1) e.preventDefault();
       },
       { passive: false },
     );
@@ -102,58 +118,50 @@ class GameApp {
       },
       { passive: false },
     );
-    // Kill iOS double-tap zoom while in match
+
+    // Double-tap zoom — only block on game surface, never on buttons/inputs
     let lastTap = 0;
     document.addEventListener(
       "touchend",
       (e) => {
         if (!this.running) return;
+        const t = e.target as HTMLElement | null;
+        if (t?.closest?.("button, a, input, select, label, .mbtn, .heal-pill")) return;
         const now = performance.now();
-        if (now - lastTap < 350) e.preventDefault();
+        if (now - lastTap < 320) e.preventDefault();
         lastTap = now;
-        this.recoverViewportZoom();
       },
       { passive: false },
     );
+
     window.visualViewport?.addEventListener("resize", () => {
-      if (this.running) this.recoverViewportZoom();
+      if (this.running) {
+        this.clearAppZoomHacks();
+        this.fixViewportScroll();
+        this.resize();
+      }
     });
   }
 
-  /** If the browser still zooms, compensate so the game stays playable */
-  private recoverViewportZoom(): void {
-    if (!this.running) return;
-    const vv = window.visualViewport;
-    const scale = vv?.scale ?? 1;
+  /** Strip any leftover transform hacks from older builds */
+  private clearAppZoomHacks(): void {
     const app = $("app");
-    if (Math.abs(scale - 1) > 0.02) {
-      // Counter-scale the app so gameplay fills the visual viewport
-      app.style.transform = `scale(${1 / scale})`;
-      app.style.transformOrigin = "0 0";
-      app.style.width = `${scale * 100}vw`;
-      app.style.height = `${scale * 100}vh`;
-      // Nudge viewport meta (helps some Android WebViews)
-      const meta = document.querySelector('meta[name="viewport"]');
-      if (meta) {
-        meta.setAttribute(
-          "content",
-          "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no",
-        );
-      }
-    } else {
-      app.style.transform = "";
-      app.style.transformOrigin = "";
-      app.style.width = "";
-      app.style.height = "";
-    }
-    window.scrollTo(0, 0);
+    app.style.transform = "";
+    app.style.transformOrigin = "";
+    app.style.width = "";
+    app.style.height = "";
+    // Re-assert non-scalable viewport without fighting layout
+    const meta = document.querySelector('meta[name="viewport"]');
+    meta?.setAttribute(
+      "content",
+      "width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover, shrink-to-fit=no",
+    );
   }
 
   private fixViewportScroll(): void {
     if (!this.running) return;
-    this.recoverViewportZoom();
     window.scrollTo(0, 0);
-    if (window.visualViewport && window.visualViewport.offsetTop !== 0) {
+    if (window.visualViewport && Math.abs(window.visualViewport.offsetTop) > 0.5) {
       window.scrollTo(0, 0);
     }
   }
@@ -384,10 +392,9 @@ class GameApp {
   private resize(): void {
     const maxDpr = this.settings.lowPower ? 1.25 : 2;
     const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-    // visualViewport fixes black bars after accidental browser zoom
-    const vv = window.visualViewport;
-    const w = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
-    const h = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
+    // Layout viewport — NOT visualViewport (pinch zoom shrinks VV and desyncs the game)
+    const w = Math.max(1, Math.floor(window.innerWidth));
+    const h = Math.max(1, Math.floor(window.innerHeight));
     this.canvas.width = Math.floor(w * dpr);
     this.canvas.height = Math.floor(h * dpr);
     this.canvas.style.width = `${w}px`;
@@ -401,8 +408,10 @@ class GameApp {
     $("lobby").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.remove("hidden");
+    document.documentElement.classList.add("playing");
     document.body.classList.add("playing");
     document.body.classList.remove("lobby-open");
+    this.clearAppZoomHacks();
     this.matchSize = config.mode === "vs_ai" ? PRACTICE_LOBBY_SIZE : LOBBY_SIZE;
     if (this.touchMode) {
       document.body.classList.add("touch-mode");
@@ -531,12 +540,10 @@ class GameApp {
     this.input.resetPointers();
     if (!this.touchMode) this.input.disableTouchMode();
     void this.exitImmersive();
+    document.documentElement.classList.remove("playing");
     document.body.classList.remove("playing", "touch-mode");
     document.body.classList.add("lobby-open");
-    const app = $("app");
-    app.style.transform = "";
-    app.style.width = "";
-    app.style.height = "";
+    this.clearAppZoomHacks();
     $("mobile-tip").classList.add("hidden");
     $("results").classList.add("hidden");
     $("hud").classList.add("hidden");
@@ -556,9 +563,8 @@ class GameApp {
 
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    const vv = window.visualViewport;
-    const viewW = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
-    const viewH = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
+    const viewW = Math.max(1, Math.floor(window.innerWidth));
+    const viewH = Math.max(1, Math.floor(window.innerHeight));
     this.host.tick(dt, this.input, viewW, viewH);
     if (this.bundle) {
       this.renderer.draw(this.bundle, viewW, viewH, this.input.mouseX, this.input.mouseY, {
@@ -575,7 +581,8 @@ class GameApp {
       }
     }
     this.syncTouchOverlay();
-    this.recoverViewportZoom();
+    // Sync WPN cycle to real sim slot
+    if (this.bundle) this.input.syncWeaponSlot(this.bundle.player.activeSlot);
     this.input.endFrame();
 
     if (this.host.matchOver && this.host.result) {
